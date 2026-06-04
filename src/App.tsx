@@ -15,12 +15,13 @@ import {
   ChevronRight,
   ShieldCheck,
   Undo2,
-  Users
+  Users,
+  Menu,
+  ChevronDown
 } from 'lucide-react';
 import { Transaction, JournalLine, AccountLedger, AppTab } from './types';
 
 export default function App() {
-  // Navigation & Screen control: Enter with Landing Page = false initially
   const [isStarted, setIsStarted] = useState(false);
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [activeTab, setActiveTab] = useState<AppTab>('diario');
@@ -36,7 +37,7 @@ export default function App() {
     };
   } | null>(null);
 
-  // Form states for manual registration - starts empty & clean
+  // Form states for manual registration - starts empty & clean as requested
   const [formConcept, setFormConcept] = useState('');
   const [formLines, setFormLines] = useState<Array<{ cuenta: string; debe: string; haber: string }>>([
     { cuenta: '', debe: '', haber: '' },
@@ -60,7 +61,6 @@ export default function App() {
     }
   }, []);
 
-  // Save to storage helper
   const saveTransactions = (newTxs: Transaction[]) => {
     setTransactions(newTxs);
     localStorage.setItem('contabilidad_pro_data', JSON.stringify(newTxs));
@@ -70,7 +70,6 @@ export default function App() {
     setToast({ message, type, action });
   };
 
-  // Toast automatic decay
   useEffect(() => {
     if (toast) {
       const timer = setTimeout(() => {
@@ -80,7 +79,7 @@ export default function App() {
     }
   }, [toast]);
 
-  // --- LEDGER ENGINE ---
+  // --- LEDGER ALGORITHMS ---
   const calculateEngine = (): AccountLedger[] => {
     const dict: Record<string, { num: number; name: string; debe: number; haber: number; history: Array<{ pda: string; debe: number; haber: number }> }> = {};
     let accountCounter = 1;
@@ -133,7 +132,7 @@ export default function App() {
 
   const catalog = calculateEngine();
 
-  // Compute sums
+  // Compute balance sums
   const globalSums = catalog.reduce((acc, current) => {
     acc.debeSum += current.debe;
     acc.haberSum += current.haber;
@@ -144,7 +143,7 @@ export default function App() {
 
   const isBalanced = Math.abs(globalSums.debeSum - globalSums.haberSum) < 0.01;
 
-  // --- DELETE ACTIONS ---
+  // --- ACTIONS ---
   const handleDeleteTransaction = (id: string) => {
     const backupTxs = [...transactions];
     const filtered = transactions.filter(t => t.id !== id);
@@ -386,7 +385,7 @@ export default function App() {
     try {
       const wb = XLSX.utils.book_new();
       
-      const balanceHeaders = [["SISTEMA CONTABLE - REPORTES"], [], ["No.", "Cuenta Contable", "Suma Debe", "Suma Haber", "Saldo Deudor", "Saldo Acreedor"]];
+      const balanceHeaders = [["SISTEMA CONTABLE"], [], ["No.", "Cuenta Contable", "Suma Debe", "Suma Haber", "Saldo Deudor", "Saldo Acreedor"]];
       const balanceData = catalog.map(c => [
         c.num,
         c.name,
@@ -444,7 +443,7 @@ export default function App() {
   return (
     <div className="min-h-screen bg-[#ECF0F1] text-[#2C3E50] font-sans antialiased selection:bg-[#34495E]/20">
       
-      {/* 1. LANDING/MAIN CREDITS PAGE SCREEN */}
+      {/* 1. INITIAL LANDING/CREDITS WELCOME SCREEN */}
       <AnimatePresence mode="wait">
         {!isStarted ? (
           <motion.div 
@@ -452,115 +451,93 @@ export default function App() {
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            className="min-h-screen flex flex-col justify-between p-6 sm:p-12 relative overflow-hidden"
+            className="min-h-screen flex flex-col justify-center items-center p-6 relative overflow-hidden"
           >
-            {/* Background design accents following colors */}
-            <div className="absolute top-0 right-0 w-96 h-96 bg-[#2C3E50]/5 rounded-full blur-3xl pointer-events-none -mr-20 -mt-20" />
-            <div className="absolute bottom-0 left-0 w-96 h-96 bg-[#C0392B]/5 rounded-full blur-3xl pointer-events-none -ml-20 -mb-20" />
-
-            {/* Subtle Tiny Header */}
-            <header className="w-full text-center py-4">
-              <span className="text-[11px] font-bold tracking-widest text-[#2C3E50]/65 uppercase">SISTEMA ACADÉMICO AUXILIAR</span>
-            </header>
-
-            {/* Main Central Layout with Side-bento names and button in center */}
-            <main className="max-w-6xl w-full mx-auto grid grid-cols-1 lg:grid-cols-12 gap-8 my-auto items-center">
+            {/* Minimalist Grid Layout Containing Credits Side-Boxes + Middle Start Card */}
+            <div className="max-w-5xl w-full mx-auto grid grid-cols-1 lg:grid-cols-12 gap-8 items-center relative z-10">
               
-              {/* Left Side: Integrantes Column */}
+              {/* Left Column: Separated boxes displaying the names */}
               <div className="lg:col-span-3 space-y-4">
-                <div className="bg-white p-5 rounded-2xl border border-slate-350/40 shadow-xs hover:border-[#34495E]/40 transition-colors">
-                  <span className="text-[10px] font-bold text-[#34495E]/60 uppercase tracking-wider block mb-1">INTEGRANTE</span>
-                  <p className="font-bold text-[#2C3E50] text-sm leading-relaxed">
+                <div className="bg-white p-5 rounded-xl border border-slate-300 shadow-sm transition-all text-center">
+                  <span className="text-[10px] font-bold text-[#34495E]/50 uppercase tracking-widest block mb-1">INTEGRANTE</span>
+                  <p className="font-extrabold text-[#2C3E50] text-[13.5px] leading-snug">
                     Mardoqueo Alfredo González López
                   </p>
                 </div>
 
-                <div className="bg-white p-5 rounded-2xl border border-slate-350/40 shadow-xs hover:border-[#34495E]/40 transition-colors">
-                  <span className="text-[10px] font-bold text-[#34495E]/60 uppercase tracking-wider block mb-1">INTEGRANTE</span>
-                  <p className="font-bold text-[#2C3E50] text-sm leading-relaxed">
+                <div className="bg-white p-5 rounded-xl border border-slate-300 shadow-sm transition-all text-center">
+                  <span className="text-[10px] font-bold text-[#34495E]/50 uppercase tracking-widest block mb-1">INTEGRANTE</span>
+                  <p className="font-extrabold text-[#2C3E50] text-[13.5px] leading-snug">
                     Erik Diego Francisco Orozco Vásquez
                   </p>
                 </div>
               </div>
 
-              {/* Central Area: Massive beautiful start trigger card */}
-              <div className="lg:col-span-6 bg-white rounded-3xl border-2 border-[#2C3E50] p-8 md:p-12 text-center shadow-md relative overflow-hidden">
-                <div className="absolute top-0 left-0 right-0 h-1.5 bg-[#2C3E50]" />
-                
-                <div className="mx-auto w-16 h-16 bg-[#ECF0F1] rounded-2xl flex items-center justify-center mb-6 text-[#2C3E50] border border-slate-200">
-                  <Calculator className="w-8 h-8" />
+              {/* Centered Area: Simplified start card with button in center, no secondary description text */}
+              <div className="lg:col-span-6 bg-white rounded-2xl border-2 border-[#2C3E50] p-10 md:p-14 text-center shadow-md relative">
+                <div className="mx-auto w-14 h-14 bg-[#ECF0F1] rounded-xl flex items-center justify-center mb-6 text-[#2C3E50] border border-slate-200">
+                  <Calculator className="w-7 h-7" />
                 </div>
 
-                <h1 className="text-4xl md:text-5xl font-extrabold tracking-tight text-[#2C3E50] mb-3">
+                <h1 className="text-3xl md:text-4xl font-extrabold tracking-tight text-[#2C3E50] mb-8">
                   Sistema Contable
                 </h1>
-                
-                <p className="text-sm text-slate-500 max-w-sm mx-auto mb-10 leading-relaxed font-semibold">
-                  Gestión ordenada de Libro Diario, Libro Mayor de Cuentas T y Balance de Comprobación Integrado.
-                </p>
 
+                {/* Single Centered Iniciar Button */}
                 <button
                   id="iniciar-btn"
                   onClick={() => setIsStarted(true)}
-                  className="inline-flex items-center justify-center gap-3 px-10 py-4 bg-[#2C3E50] hover:bg-[#34495E] text-white font-extrabold text-base rounded-2xl shadow-md tracking-wide transform hover:-translate-y-0.5 active:translate-y-0 cursor-pointer transition-all w-full sm:w-auto"
+                  className="inline-flex items-center justify-center gap-3 px-12 py-3.5 bg-[#2C3E50] hover:bg-[#34495E] text-white font-extrabold text-sm rounded-xl tracking-wider select-none active:scale-95 cursor-pointer transition-all w-full sm:w-auto"
                 >
                   Iniciar
-                  <ChevronRight className="w-5 h-5" />
+                  <ChevronRight className="w-4 h-4" />
                 </button>
               </div>
 
-              {/* Right Side: Integrantes Column */}
+              {/* Right Column: Separated boxes displaying the names */}
               <div className="lg:col-span-3 space-y-4">
-                <div className="bg-white p-5 rounded-2xl border border-slate-350/40 shadow-xs hover:border-[#34495E]/40 transition-colors">
-                  <span className="text-[10px] font-bold text-[#34495E]/60 uppercase tracking-wider block mb-1">INTEGRANTE</span>
-                  <p className="font-bold text-[#2C3E50] text-sm leading-relaxed">
+                <div className="bg-white p-5 rounded-xl border border-slate-300 shadow-sm transition-all text-center">
+                  <span className="text-[10px] font-bold text-[#34495E]/50 uppercase tracking-widest block mb-1">INTEGRANTE</span>
+                  <p className="font-extrabold text-[#2C3E50] text-[13.5px] leading-snug">
                     Jefferson Daniel Paredes Orozco
                   </p>
                 </div>
 
-                <div className="bg-white p-5 rounded-2xl border border-slate-350/40 shadow-xs hover:border-[#34495E]/40 transition-colors">
-                  <span className="text-[10px] font-bold text-[#34495E]/60 uppercase tracking-wider block mb-1">INTEGRANTE</span>
-                  <p className="font-bold text-[#2C3E50] text-sm leading-relaxed">
+                <div className="bg-white p-5 rounded-xl border border-slate-300 shadow-sm transition-all text-center">
+                  <span className="text-[10px] font-bold text-[#34495E]/50 uppercase tracking-widest block mb-1">INTEGRANTE</span>
+                  <p className="font-extrabold text-[#2C3E50] text-[13.5px] leading-snug">
                     Rossvin Omar Chúm Godínez
                   </p>
                 </div>
               </div>
 
-            </main>
-
-            {/* Empty Minimal bottom status */}
-            <div className="w-full text-center py-4 text-[10px] uppercase tracking-widest text-slate-400 font-bold">
-              Guatemala • 2026
             </div>
           </motion.div>
         ) : (
           
-          /* 2. THE ACTUAL ACCOUNTING SYSTEM WORKSPACE */
+          /* 2. MAIN ACTIVE SYSTEM WORKSPACE */
           <motion.div 
             key="workspace"
-            initial={{ opacity: 0, y: 12 }}
+            initial={{ opacity: 0, y: 10 }}
             animate={{ opacity: 1, y: 0 }}
             className="max-w-7xl mx-auto px-4 py-8 sm:px-6 lg:px-8"
           >
-            {/* WORKSPACE HEADER */}
+            {/* SIMPLE WORKSPACE HEADER */}
             <header className="mb-8 flex flex-col md:flex-row md:items-center md:justify-between gap-4 border-b border-slate-200 pb-6 relative">
-              <div>
-                <div className="flex items-center gap-3">
-                  <div className="p-2.5 bg-[#2C3E50] text-white rounded-xl shadow-md border border-[#34495E]/20">
-                    <Calculator className="w-7 h-7" />
-                  </div>
-                  <div>
-                    <h1 className="text-3xl font-extrabold tracking-tight text-[#2C3E50]">Sistema Contable</h1>
-                  </div>
+              <div className="flex items-center gap-3">
+                <div className="p-2.5 bg-[#2C3E50] text-white rounded-xl shadow-md border border-[#34495E]/20">
+                  <Calculator className="w-6 h-6" />
                 </div>
+                <h1 className="text-2xl font-extrabold tracking-tight text-[#2C3E50]">Sistema Contable</h1>
               </div>
 
               {/* Status information area */}
               <div className="flex flex-wrap items-center gap-3">
-                {/* Cuadrado/No cuadrado live pill */}
+                
+                {/* Cuadrado / No cuadrado status pill (No other complex text tags) */}
                 <div className={`inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl text-xs font-bold border shadow-xs ${
                   isBalanced && transactions.length > 0
-                    ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                    ? 'bg-emerald-50 text-emerald-800 border-emerald-250'
                     : transactions.length === 0
                     ? 'bg-amber-50 text-amber-600 border-amber-200'
                     : 'bg-[#E74C3C]/5 text-[#E74C3C] border-[#E74C3C]/20'
@@ -571,15 +548,15 @@ export default function App() {
                   {isBalanced && transactions.length > 0 ? 'Cuadrado' : transactions.length === 0 ? 'Sin Registros' : 'No cuadrado'}
                 </div>
 
-                {/* Registry record counters strictly as requested: ONLY registers length, NO correlativos word */}
-                <div className="bg-white text-[#2C3E50] px-3.5 py-1.5 rounded-xl text-xs font-bold border border-slate-250">
-                  Registros: <b className="text-[#2C3E50] font-mono text-sm ml-0.5">{transactions.length}</b>
+                {/* Only records counter - strictly no "correlativos" word as requested */}
+                <div className="bg-white text-[#2C3E50] px-3.5 py-1.5 rounded-xl text-xs font-bold border border-slate-300 shadow-xs">
+                  Registros: <span className="font-mono text-sm font-extrabold">{transactions.length}</span>
                 </div>
 
                 {/* Back to land button */}
                 <button
                   onClick={() => setIsStarted(false)}
-                  className="px-3 py-1.5 bg-slate-200 hover:bg-slate-300 text-[#34495E] rounded-xl text-xs font-bold transition-all cursor-pointer inline-flex items-center gap-1 border border-slate-300"
+                  className="px-3.5 py-1.5 bg-slate-200 hover:bg-slate-300 text-[#34495E] rounded-xl text-xs font-bold transition-all cursor-pointer inline-flex items-center gap-1.5 border border-slate-300"
                 >
                   <Users className="w-3.5 h-3.5" />
                   Créditos
@@ -588,7 +565,7 @@ export default function App() {
             </header>
 
             {/* BAR UTILS CONTROLLERS */}
-            <nav className="bg-white p-3 rounded-2xl border border-slate-200 shadow-xs flex flex-col sm:flex-row gap-3 items-center justify-between mb-8">
+            <nav className="bg-white p-3 rounded-xl border border-slate-200 shadow-xs flex flex-col sm:flex-row gap-3 items-center justify-between mb-8">
               <div className="flex flex-wrap gap-1.5 w-full sm:w-auto">
                 <button
                   id="tab-diario-btn"
@@ -596,7 +573,7 @@ export default function App() {
                   className={`flex-1 sm:flex-none inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl text-sm font-bold cursor-pointer transition-all ${
                     activeTab === 'diario'
                       ? 'bg-[#2C3E50] text-white shadow-xs'
-                      : 'text-slate-600 hover:bg-slate-100 hover:text-slate-950'
+                      : 'text-slate-600 hover:bg-slate-100 hover:text-[#2C3E50]'
                   }`}
                 >
                   <BookOpen className="w-4 h-4" />
@@ -609,7 +586,7 @@ export default function App() {
                   className={`flex-1 sm:flex-none inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl text-sm font-bold cursor-pointer transition-all ${
                     activeTab === 'mayor'
                       ? 'bg-[#2C3E50] text-white shadow-xs'
-                      : 'text-slate-600 hover:bg-slate-100 hover:text-slate-950'
+                      : 'text-slate-600 hover:bg-slate-100 hover:text-[#2C3E50]'
                   }`}
                 >
                   <FolderOpen className="w-4 h-4" />
@@ -622,7 +599,7 @@ export default function App() {
                   className={`flex-1 sm:flex-none inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl text-sm font-bold cursor-pointer transition-all ${
                     activeTab === 'balance'
                       ? 'bg-[#2C3E50] text-white shadow-xs'
-                      : 'text-slate-600 hover:bg-slate-100 hover:text-slate-950'
+                      : 'text-slate-600 hover:bg-slate-100 hover:text-[#2C3E50]'
                   }`}
                 >
                   <PieChart className="w-4 h-4" />
@@ -630,15 +607,14 @@ export default function App() {
                 </button>
               </div>
 
-              {/* RE-WRITTEN RIGHT HAND SIDE OPERATIONS */}
+              {/* DATA OPERATIONS ACTIONS */}
               <div className="flex flex-wrap gap-2 w-full sm:w-auto justify-end">
                 
-                {/* Excel Import button */}
+                {/* Excel Import */}
                 <div className="relative inline-block">
                   <button
                     onClick={() => fileInputRef.current?.click()}
-                    className="inline-flex items-center gap-2 px-4 py-2 bg-slate-100 hover:bg-slate-200 border border-slate-300 text-[#34495E] text-xs font-bold rounded-xl cursor-pointer transition-all"
-                    title="Importar de archivo Excel"
+                    className="inline-flex items-center gap-2 px-3.5 py-1.5 bg-slate-100 hover:bg-slate-200 border border-slate-300 text-[#34495E] text-xs font-bold rounded-lg cursor-pointer transition-all animate-none"
                   >
                     <Upload className="w-3.5 h-3.5" />
                     Importar Excel
@@ -652,20 +628,19 @@ export default function App() {
                   />
                 </div>
 
-                {/* Excel Export button */}
+                {/* Excel Export */}
                 <button
                   onClick={handleExportExcel}
-                  className="inline-flex items-center gap-2 px-4 py-2 bg-[#2C3E50] hover:bg-[#34495E] text-white text-xs font-bold rounded-xl cursor-pointer transition-all"
-                  title="Exportar Reporte General a Excel"
+                  className="inline-flex items-center gap-2 px-3.5 py-1.5 bg-[#2C3E50] hover:bg-[#34495E] text-white text-xs font-bold rounded-lg cursor-pointer transition-all"
                 >
                   <Download className="w-3.5 h-3.5" />
                   Exportar XLS
                 </button>
 
-                {/* Wipe Trigger */}
+                {/* Delete Entire History with red/action indicators */}
                 <button
                   onClick={() => setShowConfirmModal(true)}
-                  className="inline-flex items-center justify-center p-2 rounded-xl bg-white border border-slate-300 text-[#C0392B] hover:bg-[#E74C3C]/5 hover:border-[#E74C3C]/30 cursor-pointer transition-colors"
+                  className="inline-flex items-center justify-center p-2 rounded-lg bg-white border border-slate-300 text-[#C0392B] hover:bg-[#E74C3C]/5 hover:border-[#E74C3C]/30 cursor-pointer transition-all"
                   title="Borrar movimientos"
                 >
                   <Trash2 className="w-4 h-4" />
@@ -673,14 +648,14 @@ export default function App() {
               </div>
             </nav>
 
-            {/* TAB SCREENS CONTENT */}
+            {/* TAB SCREENS RENDER BLOCK */}
             <main className="min-h-[480px]">
 
-              {/* LIBRO DIARIO WORKSPACE VIEW */}
+              {/* VIEW 1: LIBRO DIARIO */}
               {activeTab === 'diario' && (
                 <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
                   
-                  {/* LEFT: PARTIDAS RECORD LIST */}
+                  {/* LEFT: DOUBLE ENTRY GENERAL PARTIDAS */}
                   <div className="lg:col-span-7 space-y-6">
                     <div className="flex items-center justify-between">
                       <h2 className="text-lg font-bold text-[#2C3E50] flex items-center gap-2">
@@ -690,9 +665,9 @@ export default function App() {
                     </div>
 
                     {transactions.length === 0 ? (
-                      <div className="bg-white rounded-2xl border border-slate-350/50 border-dashed p-12 text-center">
-                        <div className="p-4 bg-slate-100 text-slate-400 rounded-full w-fit mx-auto mb-3">
-                          <BookOpen className="w-7 h-7" />
+                      <div className="bg-white rounded-xl border border-slate-300 border-dashed p-14 text-center">
+                        <div className="p-3.5 bg-slate-50 text-slate-400 rounded-full w-fit mx-auto mb-3">
+                          <BookOpen className="w-6.5 h-6.5" />
                         </div>
                         <h3 className="text-sm font-bold text-slate-700">Libro Diario Despejado</h3>
                       </div>
@@ -706,12 +681,12 @@ export default function App() {
                           return (
                             <motion.div 
                               key={tx.id}
-                              initial={{ opacity: 0, y: 8 }}
+                              initial={{ opacity: 0, y: 6 }}
                               animate={{ opacity: 1, y: 0 }}
-                              className="bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-xs"
+                              className="bg-white rounded-xl border border-slate-200 overflow-hidden shadow-xs"
                             >
-                              {/* Entry Header block */}
-                              <div className="bg-slate-50 border-b border-slate-150 px-5 py-3.5 flex items-center justify-between gap-4">
+                              {/* Header & Working single delete action target */}
+                              <div className="bg-slate-50 border-b border-slate-200 px-5 py-3.5 flex items-center justify-between gap-4">
                                 <div className="flex flex-col">
                                   <span className="text-sm font-bold text-[#2C3E50]">
                                     {tx.concepto}
@@ -728,21 +703,21 @@ export default function App() {
                                     </span>
                                   )}
                                   
-                                  {/* DELETE INDIVIDUAL TRASH TRIGGER (USER FOCUS BUTTON FOR SURE WORKING) */}
+                                  {/* DELETE SINGLE RE-CONFIRMED ACTION BUTTON */}
                                   <button
                                     id={`delete-btn-${tx.id}`}
                                     onClick={() => handleDeleteTransaction(tx.id)}
-                                    className="p-1.5 bg-white border border-slate-250 text-slate-400 hover:text-[#E74C3C] hover:border-[#E74C3C]/40 rounded-lg shadow-xs transition-colors cursor-pointer"
-                                    title="Borrar asiento"
+                                    className="p-1.5 bg-white border border-slate-255 text-slate-400 hover:text-[#C0392B] hover:border-[#E74C3C]/30 rounded-lg shadow-xs transition-colors cursor-pointer"
+                                    title="Eliminar partida permanentemente del diario"
                                   >
-                                    <Trash2 className="w-4 h-4" />
+                                    <Trash2 className="w-3.5 h-3.5" />
                                   </button>
                                 </div>
                               </div>
 
-                              {/* Rows list table */}
+                              {/* Rows Table */}
                               <div className="overflow-x-auto w-full">
-                                <table className="w-full text-sm border-0">
+                                <table className="w-full text-sm border-none">
                                   <thead>
                                     <tr className="bg-slate-50/50">
                                       <th className="text-left py-2 px-5 text-slate-500 text-xs font-bold border-b border-slate-100">Cuentas</th>
@@ -754,22 +729,21 @@ export default function App() {
                                     {tx.lineas.map((line, lIdx) => {
                                       const isHaber = line.haber > 0;
                                       return (
-                                        <tr key={lIdx} className="border-b border-slate-100 hover:bg-slate-50/30">
-                                          <td className={`py-2 px-5 ${isHaber ? 'pl-9 text-slate-500' : 'font-semibold text-[#2C3E50]'}`}>
+                                        <tr key={lIdx} className="border-b border-slate-100 hover:bg-slate-55/35">
+                                          <td className={`py-2 px-5 ${isHaber ? 'pl-9 text-slate-505' : 'font-semibold text-[#2C3E50]'}`}>
                                             {line.cuenta}
                                           </td>
-                                          <td className="text-right py-2 px-5 font-mono text-xs font-bold text-slate-700">
+                                          <td className="text-right py-2 px-5 font-mono text-xs font-bold text-slate-600">
                                             {line.debe > 0 ? formatCurrency(line.debe) : '—'}
                                           </td>
-                                          <td className="text-right py-2 px-5 font-mono text-xs font-bold text-slate-700">
+                                          <td className="text-right py-2 px-5 font-mono text-xs font-bold text-slate-600">
                                             {line.haber > 0 ? formatCurrency(line.haber) : '—'}
                                           </td>
                                         </tr>
                                       );
                                     })}
                                     
-                                    {/* Sub-balancing sums visual row */}
-                                    <tr className="bg-slate-50/30 font-bold text-xs">
+                                    <tr className="bg-slate-50/20 font-bold text-xs">
                                       <td className="py-2.5 px-5 text-right text-slate-500 uppercase font-extrabold">Totales</td>
                                       <td className="text-right py-2.5 px-5 font-mono text-[#2C3E50] border-t border-slate-200">
                                         {formatCurrency(totalDebe)}
@@ -788,8 +762,8 @@ export default function App() {
                     )}
                   </div>
 
-                  {/* RIGHT: MANUAL WRITING DRAFT BUILDER */}
-                  <div className="lg:col-span-5 bg-white p-6 rounded-2xl border border-slate-200 shadow-xs lg:sticky lg:top-4">
+                  {/* RIGHT: COMPILATION & REGISTRATION FORM */}
+                  <div className="lg:col-span-5 bg-white p-6 rounded-xl border border-slate-200 shadow-xs lg:sticky lg:top-4">
                     <div className="flex items-center gap-2 mb-6 pb-4 border-b border-slate-150">
                       <Calculator className="w-5 h-5 text-[#34495E]" />
                       <h2 className="text-base font-bold text-[#2C3E50]">Registrar Partida Manual</h2>
@@ -797,7 +771,7 @@ export default function App() {
 
                     <form onSubmit={handleSaveTransaction} className="space-y-5">
                       
-                      {/* Concept string input - WITHOUT AUDIT PRE-POPULATIONS AND GLOSS DESCRIPTION AT ALL */}
+                      {/* Concept - NO PLACEHOLDER AS REQUESTED ("no pongas nada") */}
                       <div>
                         <label htmlFor="form-concept" className="block text-xs font-bold text-slate-500 uppercase mb-2">
                           Concepto de Operación
@@ -814,7 +788,7 @@ export default function App() {
                         />
                       </div>
 
-                      {/* Line entries editor */}
+                      {/* Account entries */}
                       <div>
                         <div className="flex items-center justify-between mb-2">
                           <label className="block text-xs font-bold text-slate-500 uppercase">
@@ -831,7 +805,7 @@ export default function App() {
                                 value={line.cuenta}
                                 onChange={(e) => handleFormLineChange(idx, 'cuenta', e.target.value)}
                                 placeholder="Nombre de cuenta"
-                                className="flex-[2] min-w-0 px-3 py-2 bg-slate-50 border border-slate-250 rounded-xl text-xs focus:outline-hidden"
+                                className="flex-[2] min-w-0 px-3 py-2 bg-slate-50 border border-slate-250 rounded-lg text-xs focus:outline-hidden"
                                 autoComplete="off"
                               />
                               <input
@@ -840,7 +814,7 @@ export default function App() {
                                 value={line.debe}
                                 onChange={(e) => handleFormLineChange(idx, 'debe', e.target.value)}
                                 placeholder="Debe"
-                                className="flex-1 min-w-0 px-2.5 py-2 bg-slate-50 border border-slate-250 rounded-xl text-xs font-mono text-right focus:outline-hidden"
+                                className="flex-1 min-w-0 px-2.5 py-2 bg-slate-50 border border-slate-250 rounded-lg text-xs font-mono text-right focus:outline-hidden"
                               />
                               <input
                                 type="number"
@@ -848,14 +822,14 @@ export default function App() {
                                 value={line.haber}
                                 onChange={(e) => handleFormLineChange(idx, 'haber', e.target.value)}
                                 placeholder="Haber"
-                                className="flex-1 min-w-0 px-2.5 py-2 bg-slate-50 border border-slate-250 rounded-xl text-xs font-mono text-right focus:outline-hidden"
+                                className="flex-1 min-w-0 px-2.5 py-2 bg-slate-50 border border-slate-250 rounded-lg text-xs font-mono text-right focus:outline-hidden"
                               />
                               
-                              {/* DELETE SINGLE EDITOR ROW BUTTON */}
+                              {/* DELETE ROW FROM CURRENT DRAFTS */}
                               <button
                                 type="button"
                                 onClick={() => handleRemoveFormLine(idx)}
-                                className="p-2 text-slate-400 hover:text-[#E74C3C] rounded-lg transition-colors cursor-pointer"
+                                className="p-2 text-slate-405 hover:text-[#C0392B] rounded-lg transition-colors cursor-pointer"
                                 title="Eliminar línea"
                               >
                                 <Trash2 className="w-3.5 h-3.5" />
@@ -864,18 +838,18 @@ export default function App() {
                           ))}
                         </div>
 
-                        {/* Add line button - Changed label strictly to "agregar cuenta" as requested */}
+                        {/* button labels changed strictly to "Agregar Cuenta" as requested */}
                         <button
                           type="button"
                           onClick={handleAddFormLine}
-                          className="mt-3 inline-flex items-center gap-1 text-xs font-extrabold text-[#2C3E50] hover:text-[#34495E] bg-slate-100 hover:bg-slate-200 px-3.5 py-2 rounded-xl cursor-pointer transition-all"
+                          className="mt-3 inline-flex items-center gap-1.5 text-xs font-extrabold text-[#2C3E50] hover:text-[#34495E] bg-slate-100 hover:bg-slate-200 px-3.5 py-2 rounded-xl cursor-pointer transition-all"
                         >
                           <Plus className="w-3 h-3" />
                           Agregar Cuenta
                         </button>
                       </div>
 
-                      {/* Real-time Math balances box */}
+                      {/* Math Summary of Active Inputs */}
                       <div className="bg-slate-50 p-4 rounded-xl border border-slate-200 space-y-2">
                         <div className="flex justify-between text-xs font-bold text-slate-500">
                           <span>Total Debe:</span>
@@ -886,7 +860,7 @@ export default function App() {
                           <span className="font-mono text-slate-800">{formatCurrency(currentFormHaber)}</span>
                         </div>
                         
-                        {/* live balance indicator: "cuadrado o no cuadrado" as requested */}
+                        {/* Status label: strictly only outputs "Cuadrado" or "No cuadrado" as requested */}
                         <div className="pt-2 border-t border-slate-200 flex justify-between items-center text-xs font-extrabold">
                           <span className="text-[#2C3E50] uppercase tracking-wide">Estado:</span>
                           <span className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-lg font-bold ${
@@ -897,7 +871,6 @@ export default function App() {
                         </div>
                       </div>
 
-                      {/* Entry submission */}
                       <button
                         type="submit"
                         className="w-full inline-flex items-center justify-center gap-2 px-4 py-3 bg-[#2C3E50] text-white rounded-xl text-sm font-bold shadow-xs hover:bg-[#34495E] active:scale-99 transition-all cursor-pointer"
@@ -910,20 +883,18 @@ export default function App() {
                 </div>
               )}
 
-              {/* LIBRO MAYOR VIEW (LEDGER T-ACCOUNTS) */}
+              {/* VIEW 2: LIBRO MAYOR (CUNTAS T) */}
               {activeTab === 'mayor' && (
                 <div>
                   <div className="flex items-center justify-between mb-8">
-                    <div>
-                      <h2 className="text-lg font-bold text-[#2C3E50] flex items-center gap-2">
-                        <FolderOpen className="w-4.5 h-4.5 text-[#34495E]" />
-                        Libro Mayor (Cuentas T)
-                      </h2>
-                    </div>
+                    <h2 className="text-lg font-bold text-[#2C3E50] flex items-center gap-2">
+                      <FolderOpen className="w-4.5 h-4.5 text-[#34495E]" />
+                      Libro Mayor (Cuentas T)
+                    </h2>
                   </div>
 
                   {catalog.length === 0 ? (
-                    <div className="bg-white rounded-2xl border border-slate-350/50 border-dashed p-16 text-center shadow-xs">
+                    <div className="bg-white rounded-xl border border-slate-300 border-dashed p-16 text-center">
                       <div className="p-4 bg-slate-50 text-slate-400 rounded-full w-fit mx-auto mb-3">
                         <FolderOpen className="w-7 h-7" />
                       </div>
@@ -937,14 +908,13 @@ export default function App() {
                             key={c.num}
                             initial={{ scale: 0.98, opacity: 0 }}
                             animate={{ scale: 1, opacity: 1 }}
-                            className="bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-xs flex flex-col justify-between"
+                            className="bg-white rounded-xl border border-slate-200 overflow-hidden shadow-xs flex flex-col justify-between"
                           >
                             <header className="bg-slate-50 border-b border-slate-200 px-4 py-3 text-center">
                               <span className="text-xs text-slate-400 font-bold font-mono mr-1">{c.num}.</span>
                               <span className="text-sm font-extrabold text-[#2C3E50]">{c.name}</span>
                             </header>
 
-                            {/* Dual columnar splitting */}
                             <div className="grid grid-cols-2 text-xs border-b border-slate-100 min-h-[140px] divide-x divide-slate-150">
                               
                               {/* DEBE */}
@@ -953,7 +923,7 @@ export default function App() {
                                   <div className="text-center font-bold text-slate-400 text-[10px] tracking-wider uppercase pb-1.5 border-b border-slate-100 mb-2">Debe</div>
                                   <div className="space-y-1">
                                     {c.history.filter(h => h.debe > 0).map((h, i) => (
-                                      <div key={i} className="flex justify-between items-center text-[10px] text-slate-650">
+                                      <div key={i} className="flex justify-between items-center text-[10px] text-slate-600">
                                         <span className="font-bold text-slate-400 bg-slate-100 px-1 rounded">{h.pda}</span>
                                         <span className="font-mono">{formatCurrency(h.debe)}</span>
                                       </div>
@@ -973,7 +943,7 @@ export default function App() {
                                   <div className="text-center font-bold text-slate-400 text-[10px] tracking-wider uppercase pb-1.5 border-b border-slate-100 mb-2">Haber</div>
                                   <div className="space-y-1">
                                     {c.history.filter(h => h.haber > 0).map((h, i) => (
-                                      <div key={i} className="flex justify-between items-center text-[10px] text-slate-650">
+                                      <div key={i} className="flex justify-between items-center text-[10px] text-slate-600">
                                         <span className="font-mono">{formatCurrency(h.haber)}</span>
                                         <span className="font-bold text-slate-400 bg-slate-100 px-1 rounded">{h.pda}</span>
                                       </div>
@@ -989,11 +959,10 @@ export default function App() {
 
                             </div>
 
-                            {/* T-Account saldo footer */}
                             <footer className="bg-slate-50 p-3 flex justify-between items-center text-[11px]">
                               <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">Saldo Final</span>
                               {c.balanceType === 'Nulo' ? (
-                                <span className="font-bold text-slate-400 uppercase">Liquidada</span>
+                                <span className="font-bold text-slate-400 uppercase text-[10px]">Liquidada</span>
                               ) : (
                                 <div className="flex items-center gap-1.5">
                                   <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded uppercase ${
@@ -1015,160 +984,151 @@ export default function App() {
                 </div>
               )}
 
-              {/* BALANCE DE COMPROBACIÓN WORKSPACE VIEW */}
+              {/* VIEW 3: BALANCE DE COMPROBACIÓN */}
               {activeTab === 'balance' && (
                 <div>
                   <div className="flex items-center justify-between mb-8">
-                    <div>
-                      <h2 className="text-lg font-bold text-[#2C3E50] flex items-center gap-2">
-                        <PieChart className="w-4.5 h-4.5 text-[#34495E]" />
-                        Balance de Comprobación
-                      </h2>
-                    </div>
+                    <h2 className="text-lg font-bold text-[#2C3E50] flex items-center gap-2">
+                      <PieChart className="w-4.5 h-4.5 text-[#34495E]" />
+                      Balance de Comprobación
+                    </h2>
                     
-                    {/* Balanced indicator strictly edited helper */}
-                    <div className={`px-4 py-2 rounded-xl text-xs font-bold border ${
+                    {/* Live balance indicator: strictly displays ONLY "Cuadrado" or "No cuadrado" format */}
+                    <div className={`px-4 py-1.5 rounded-xl text-xs font-bold border ${
                       isBalanced && transactions.length > 0
-                        ? 'bg-emerald-50 border-emerald-150 text-emerald-800'
+                        ? 'bg-emerald-50 border-emerald-200 text-emerald-800'
                         : 'bg-[#E74C3C]/5 border-[#E74C3C]/20 text-[#E74C3C]'
                     }`}>
-                      {isBalanced && transactions.length > 0 ? "✓ CUADRADO" : "⚠ NO CUADRADO"}
+                      {isBalanced && transactions.length > 0 ? "Cuadrado" : "No cuadrado"}
                     </div>
                   </div>
 
-                  <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+                  <div className="bg-white rounded-xl border border-slate-200 shadow-xs overflow-hidden">
                     <div className="overflow-x-auto w-full">
                       <table className="w-full text-sm border-collapse text-left">
                         <thead>
                           <tr className="bg-slate-50 border-b border-slate-200">
-                            <th rowSpan={2} className="py-4 px-5 text-slate-700 text-xs font-bold uppercase tracking-wider border-r border-slate-150 w-16 text-center">No.</th>
-                            <th rowSpan={2} className="py-4 px-5 text-slate-700 text-xs font-bold uppercase tracking-wider border-r border-slate-150">Cuenta Mayor</th>
-                            <th colSpan={2} className="py-2.5 px-5 text-slate-700 text-xs font-bold uppercase border-b border-slate-200 border-r border-slate-150 text-center bg-slate-100/40">Sumas</th>
-                            <th colSpan={2} className="py-2.5 px-5 text-slate-700 text-xs font-bold uppercase border-b border-slate-200 text-center bg-emerald-550/5 text-slate-900 bg-emerald-50/20">Saldos</th>
+                            <th rowSpan={2} className="py-4 px-5 text-slate-700 text-xs font-bold uppercase border-r border-slate-150 w-16 text-center">No.</th>
+                            <th rowSpan={2} className="py-4 px-5 text-slate-700 text-xs font-bold uppercase border-r border-slate-150">Cuenta Mayor</th>
+                            <th colSpan={2} className="py-2 px-5 text-slate-700 text-xs font-bold uppercase border-b border-slate-200 border-r border-slate-150 text-center bg-slate-100/40">Sumas</th>
+                            <th colSpan={2} className="py-2 px-5 text-slate-700 text-xs font-bold uppercase border-b border-slate-200 text-center bg-emerald-50/10">Saldos</th>
                           </tr>
-                          <tr className="bg-slate-50/50 border-b border-slate-200">
-                            <th className="py-2 px-5 text-slate-500 text-[10px] font-bold text-right uppercase border-r border-slate-150 w-36">Debe</th>
-                            <th className="py-2 px-5 text-slate-500 text-[10px] font-bold text-right uppercase border-r border-slate-150 w-36">Haber</th>
-                            <th className="py-2 px-5 text-emerald-800 text-[10px] font-bold text-right uppercase border-r border-slate-150 bg-emerald-50/10 w-36">Deudor</th>
-                            <th className="py-2 px-5 text-emerald-800 text-[10px] font-bold text-right uppercase w-36 bg-emerald-50/10">Acreedor</th>
+                          <tr className="bg-slate-50 border-b border-slate-200 text-xs font-semibold text-slate-500">
+                            <th className="py-2 px-4 text-right border-r border-slate-100 w-28 bg-slate-100/10">Debe</th>
+                            <th className="py-2 px-4 text-right border-r border-slate-150 w-28 bg-slate-100/10">Haber</th>
+                            <th className="py-2 px-4 text-right border-r border-slate-100 w-28 bg-emerald-50/20 text-emerald-800">Deudor</th>
+                            <th className="py-2 px-4 text-right w-28 bg-emerald-50/20 text-emerald-800">Acreedor</th>
                           </tr>
                         </thead>
                         <tbody>
                           {catalog.length === 0 ? (
                             <tr>
-                              <td colSpan={6} className="text-center py-12 text-slate-400">
-                                <span className="text-xs font-semibold block text-slate-500">No se registran cuentas</span>
+                              <td colSpan={6} className="text-center py-12 text-slate-450 font-bold">
+                                Sin saldos que reportar. Registra partidas primero.
                               </td>
                             </tr>
                           ) : (
-                            <>
-                              {catalog.map(c => {
-                                const isDeudor = c.balanceType === 'Deudor';
-                                const isAcreedor = c.balanceType === 'Acreedor';
-                                return (
-                                  <tr key={c.num} className="hover:bg-slate-50 /30 border-b border-slate-100 transition-colors">
-                                    <td className="py-3 px-5 text-center font-mono text-slate-400 text-xs border-r border-slate-150">{c.num}</td>
-                                    <td className="py-3 px-5 font-bold text-[#2C3E50] border-r border-slate-150">{c.name}</td>
-                                    <td className="py-3 px-5 text-right font-mono text-slate-600 border-r border-slate-150">{formatCurrency(c.debe)}</td>
-                                    <td className="py-3 px-5 text-right font-mono text-slate-600 border-r border-slate-150">{formatCurrency(c.haber)}</td>
-                                    <td className="py-3 px-5 text-right font-mono text-emerald-700 border-r border-slate-150 bg-emerald-50/5">{isDeudor ? formatCurrency(c.balance) : '—'}</td>
-                                    <td className="py-3 px-5 text-right font-mono text-emerald-700 bg-emerald-50/5">{isAcreedor ? formatCurrency(c.balance) : '—'}</td>
-                                  </tr>
-                                );
-                              })}
-                              
-                              {/* Balances totals footer row */}
-                              <tr className="bg-[#2C3E50] text-white font-bold text-xs">
-                                <td colSpan={2} className="py-4 px-5 text-right uppercase tracking-wider font-extrabold border-r border-white/10">SUMAS IGUALES</td>
-                                <td className="py-4 px-5 text-right font-mono border-r border-white/10 text-sm">{formatCurrency(globalSums.debeSum)}</td>
-                                <td className="py-4 px-5 text-right font-mono border-r border-white/10 text-sm">{formatCurrency(globalSums.haberSum)}</td>
-                                <td className="py-4 px-5 text-right font-mono border-r border-white/10 bg-[#34495E] text-slate-100 text-sm">{formatCurrency(globalSums.deudorSum)}</td>
-                                <td className="py-4 px-5 text-right font-mono bg-[#34495E] text-slate-100 text-sm">{formatCurrency(globalSums.acreedorSum)}</td>
-                              </tr>
-                            </>
+                            catalog.map((c, index) => {
+                              return (
+                                <tr key={c.num} className="border-b border-slate-150 hover:bg-slate-50/40 font-medium select-all">
+                                  <td className="py-2 px-5 text-center font-mono text-xs text-slate-400 border-r border-slate-150">{index + 1}</td>
+                                  <td className="py-2 px-5 text-[#2C3E50] font-bold border-r border-slate-150">{c.name}</td>
+                                  <td className="py-2 px-4 text-right font-mono text-xs border-r border-slate-100">{formatCurrency(c.debe)}</td>
+                                  <td className="py-2 px-4 text-right font-mono text-xs border-r border-slate-150">{formatCurrency(c.haber)}</td>
+                                  <td className="py-2 px-4 text-right font-mono text-xs border-r border-slate-100 text-emerald-700 bg-emerald-50/5 font-semibold">
+                                    {c.balanceType === 'Deudor' ? formatCurrency(c.balance) : '—'}
+                                  </td>
+                                  <td className="py-2 px-4 text-right font-mono text-xs text-emerald-700 bg-emerald-50/5 font-semibold">
+                                    {c.balanceType === 'Acreedor' ? formatCurrency(c.balance) : '—'}
+                                  </td>
+                                </tr>
+                              );
+                            })
+                          )}
+                          
+                          {/* Totals compiling Row */}
+                          {catalog.length > 0 && (
+                            <tr className="bg-[#2C3E50] text-white font-extrabold text-xs">
+                              <td colSpan={2} className="py-3 px-5 text-right uppercase tracking-wider border-r border-white/10 font-black">Sumas Iguales</td>
+                              <td className="py-3 px-4 text-right font-mono border-r border-white/10">{formatCurrency(globalSums.debeSum)}</td>
+                              <td className="py-3 px-4 text-right font-mono border-r border-white/10">{formatCurrency(globalSums.haberSum)}</td>
+                              <td className="py-3 px-4 text-right font-mono border-r border-white/10 bg-slate-800/20">{formatCurrency(globalSums.deudorSum)}</td>
+                              <td className="py-3 px-4 text-right font-mono bg-slate-800/20">{formatCurrency(globalSums.acreedorSum)}</td>
+                            </tr>
                           )}
                         </tbody>
                       </table>
                     </div>
                   </div>
-
-                  {catalog.length > 0 && isBalanced && (
-                    <div className="mt-6 bg-white border border-emerald-200 rounded-xl p-4 flex gap-3 text-emerald-800 text-xs items-center">
-                      <ShieldCheck className="w-5 h-5 text-emerald-600 shrink-0" />
-                      <div>
-                        <span className="font-extrabold block text-emerald-950">Sistema Cuadrado</span>
-                        <span className="text-emerald-700">Verificado matemáticamente con éxito por partida doble.</span>
-                      </div>
-                    </div>
-                  )}
                 </div>
               )}
 
             </main>
-
-            {/* CONFIRM ALL DATA CLEAR MODAL */}
-            {showConfirmModal && (
-              <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-[#2C3E50]/70 backdrop-blur-xs">
-                <motion.div 
-                  initial={{ scale: 0.95, opacity: 0 }}
-                  animate={{ scale: 1, opacity: 1 }}
-                  className="bg-white rounded-2xl border border-slate-200 p-6 max-w-sm w-full shadow-xl"
-                >
-                  <div className="flex gap-3 mb-4">
-                    <div className="p-3 bg-[#E74C3C]/10 text-[#E74C3C] rounded-full h-fit">
-                      <Trash2 className="w-6 h-6" />
-                    </div>
-                    <div>
-                      <h3 className="text-lg font-bold text-[#2C3E50]">¿Borrar movimientos?</h3>
-                      <p className="text-xs text-slate-500 mt-1 leading-relaxed">
-                        Esta acción eliminará de forma irreversible todas las partidas ingresadas en el libro de diario.
-                      </p>
-                    </div>
-                  </div>
-                  <div className="flex justify-end gap-2 text-xs font-bold">
-                    <button
-                      onClick={() => setShowConfirmModal(false)}
-                      className="px-4 py-2 text-slate-500 hover:bg-slate-100 rounded-lg cursor-pointer"
-                    >
-                      Cancelar
-                    </button>
-                    <button
-                      onClick={handleClearAllData}
-                      className="px-4 py-2 text-white bg-[#C0392B] hover:bg-[#E74C3C] rounded-lg cursor-pointer"
-                    >
-                      Confirmar
-                    </button>
-                  </div>
-                </motion.div>
-              </div>
-            )}
-
-            {/* DUST OFF FOOTER CAPTIONS AS REQUESTED */}
-            <div className="h-16" />
-
           </motion.div>
         )}
       </AnimatePresence>
 
-      {/* TOAST SYSTEM ACCORDING TO USER REQUIREMENTS */}
+      {/* CONFIRMATION CLEAR SYSTEM DRAFTS DIALOG */}
+      {showConfirmModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-xs">
+          <motion.div 
+            initial={{ scale: 0.95, opacity: 0 }}
+            animate={{ scale: 1, opacity: 1 }}
+            className="bg-white rounded-xl border border-slate-200 p-6 max-w-sm w-full shadow-lg"
+          >
+            <h3 className="text-base font-extrabold text-[#2C3E50] mb-2">¿Borrar todos los movimientos?</h3>
+            <p className="text-xs text-slate-500 mb-6 leading-relaxed">
+              Esta acción limpiará permanentemente todas las partidas contables cargadas en el sistema.
+            </p>
+            <div className="flex justify-end gap-2 text-xs font-bold">
+              <button
+                onClick={() => setShowConfirmModal(false)}
+                className="px-4 py-2 hover:bg-slate-100 text-slate-500 rounded-lg cursor-pointer"
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={handleClearAllData}
+                className="px-4 py-2 bg-[#C0392B] hover:bg-rose-700 text-white rounded-lg cursor-pointer"
+              >
+                Limpiar todo
+              </button>
+            </div>
+          </motion.div>
+        </div>
+      )}
+
+      {/* TOAST SYSTEM POPUP */}
       <AnimatePresence>
         {toast && (
           <motion.div 
-            initial={{ opacity: 0, y: 15 }}
+            initial={{ opacity: 0, y: 12 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -10 }}
-            className="fixed bottom-6 right-6 z-50 flex items-center justify-between gap-4 px-4 py-3.5 rounded-xl shadow-lg border text-xs font-bold bg-[#2C3E50] text-[#ECF0F1] border-[#34495E]"
+            className={`fixed bottom-6 right-6 z-50 flex items-center justify-between gap-4 px-4 py-3 rounded-xl shadow-md border text-xs font-bold ${
+              toast.type === 'error' 
+                ? 'bg-rose-900 border-rose-800 text-white' 
+                : 'bg-[#2C3E50] border-[#34495E] text-white'
+            }`}
           >
-            <span>{toast.message}</span>
+            <div className="flex items-center gap-2">
+              {toast.type === 'error' ? (
+                <AlertTriangle className="w-4 h-4 text-rose-300 shrink-0" />
+              ) : (
+                <CheckCircle className="w-4 h-4 text-emerald-400 shrink-0" />
+              )}
+              <span>{toast.message}</span>
+            </div>
+            
             {toast.action && (
               <button
                 onClick={() => {
                   toast.action?.onTrigger();
                   setToast(null);
                 }}
-                className="ml-2 flex items-center gap-1 px-2.5 py-1 bg-white/10 hover:bg-white/20 text-[#ECF0F1] rounded-lg text-[10px] uppercase tracking-wider transition-colors cursor-pointer"
+                className="ml-2 flex items-center gap-1 px-3 py-1 bg-white/10 hover:bg-white/20 text-white rounded-lg transition-colors cursor-pointer"
               >
-                <Undo2 className="w-3.5 h-3.5" />
+                <Undo2 className="w-3 h-3" />
                 {toast.action.label}
               </button>
             )}
