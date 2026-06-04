@@ -385,45 +385,158 @@ export default function App() {
     try {
       const wb = XLSX.utils.book_new();
       
-      const balanceHeaders = [["SISTEMA CONTABLE"], [], ["No.", "Cuenta Contable", "Suma Debe", "Suma Haber", "Saldo Deudor", "Saldo Acreedor"]];
-      const balanceData = catalog.map(c => [
-        c.num,
-        c.name,
-        c.debe,
-        c.haber,
-        c.balanceType === 'Deudor' ? c.balance : 0,
-        c.balanceType === 'Acreedor' ? c.balance : 0
-      ]);
-
-      balanceData.push([
-        "",
-        "SUMAS IGUALES",
-        globalSums.debeSum,
-        globalSums.haberSum,
-        globalSums.deudorSum,
-        globalSums.acreedorSum
-      ]);
-
-      const wsBalance = XLSX.utils.aoa_to_sheet([...balanceHeaders, ...balanceData]);
-      XLSX.utils.book_append_sheet(wb, wsBalance, "Balance de Comprobación");
-
-      const diarioHeaders = [["LIBRO DIARIO DE OPERACIONES"], [], ["Partida/Cuenta", "Descripción / Glosa", "Monto Debe (Q)", "Monto Haber (Q)"]];
-      const diarioData: any[][] = [];
+      // 1. GENERAR PESTAÑA: LIBRO DIARIO
+      const diarioRows: any[][] = [
+        ["SISTEMA CONTABLE"],
+        ["LIBRO DIARIO DE OPERACIONES"],
+        [],
+        ["Cuentas / Detalle", "Debe (Q)", "Haber (Q)"]
+      ];
 
       transactions.forEach((tx) => {
-        diarioData.push([tx.concepto, "", "", ""]);
+        // Título de la partida
+        diarioRows.push([tx.concepto, "", ""]);
+        
+        let txSumDebe = 0;
+        let txSumHaber = 0;
+
         tx.lineas.forEach(l => {
-          diarioData.push(["", l.cuenta, l.debe > 0 ? l.debe : "", l.haber > 0 ? l.haber : ""]);
+          const isHaber = l.haber > 0;
+          // Aplicar sangría si es una cuenta del haber, exactamente como se ve en la página
+          const cuentaConSangria = isHaber ? "    " + l.cuenta : l.cuenta;
+          
+          diarioRows.push([
+            cuentaConSangria,
+            l.debe > 0 ? formatCurrency(l.debe) : "",
+            l.haber > 0 ? formatCurrency(l.haber) : ""
+          ]);
+          
+          txSumDebe += l.debe;
+          txSumHaber += l.haber;
         });
-        const sumD = tx.lineas.reduce((sum, line) => sum + line.debe, 0);
-        const sumH = tx.lineas.reduce((sum, line) => sum + line.haber, 0);
-        diarioData.push(["", "Sumas Iguales", sumD, sumH]);
-        diarioData.push(["", "", "", ""]);
+
+        // Totales de la partida
+        diarioRows.push([
+          "  Totales de la Partida",
+          formatCurrency(txSumDebe),
+          formatCurrency(txSumHaber)
+        ]);
+        
+        // Fila vacía de separación
+        diarioRows.push(["", "", ""]);
       });
 
-      const wsDiario = XLSX.utils.aoa_to_sheet([...diarioHeaders, ...diarioData]);
+      const wsDiario = XLSX.utils.aoa_to_sheet(diarioRows);
+      wsDiario['!cols'] = [
+        { wch: 45 }, // Cuentas / Detalle
+        { wch: 20 }, // Monto Debe
+        { wch: 20 }  // Monto Haber
+      ];
       XLSX.utils.book_append_sheet(wb, wsDiario, "Libro Diario");
 
+
+      // 2. GENERAR PESTAÑA: LIBRO MAYOR (CUENTAS T)
+      const mayorRows: any[][] = [
+        ["SISTEMA CONTABLE"],
+        ["LIBRO MAYOR (CUENTAS T)"],
+        [],
+      ];
+
+      catalog.forEach((c) => {
+        // Encabezado de la cuenta
+        mayorRows.push([`${c.num}. ${c.name.toUpperCase()}`, "", "", ""]);
+        mayorRows.push(["DEBE (Cargos)", "", "HABER (Abonos)", ""]);
+        mayorRows.push(["Referencia", "Monto (Q)", "Referencia", "Monto (Q)"]);
+
+        const charges = c.history.filter(h => h.debe > 0);
+        const payments = c.history.filter(h => h.haber > 0);
+        const maxLen = Math.max(charges.length, payments.length);
+
+        for (let i = 0; i < maxLen; i++) {
+          const chg = charges[i];
+          const pay = payments[i];
+          mayorRows.push([
+            chg ? chg.pda : "",
+            chg ? formatCurrency(chg.debe) : "",
+            pay ? pay.pda : "",
+            pay ? formatCurrency(pay.haber) : ""
+          ]);
+        }
+
+        // Sumas de las columnas
+        mayorRows.push([
+          "Suma Debe:",
+          formatCurrency(c.debe),
+          "Suma Haber:",
+          formatCurrency(c.haber)
+        ]);
+
+        // Fila de saldo final
+        const saldoStr = c.balanceType === 'Nulo' ? "Liquidada" : `${c.balanceType} (${formatCurrency(c.balance)})`;
+        mayorRows.push([
+          "Saldo Final (Saldo):",
+          saldoStr,
+          "",
+          ""
+        ]);
+
+        // Separador para la siguiente cuenta T
+        mayorRows.push(["", "", "", ""]);
+        mayorRows.push(["", "", "", ""]);
+      });
+
+      const wsMayor = XLSX.utils.aoa_to_sheet(mayorRows);
+      wsMayor['!cols'] = [
+        { wch: 18 }, // Referencia Debe
+        { wch: 20 }, // Valor Debe
+        { wch: 18 }, // Referencia Haber
+        { wch: 20 }  // Valor Haber
+      ];
+      XLSX.utils.book_append_sheet(wb, wsMayor, "Libro Mayor");
+
+
+      // 3. GENERAR PESTAÑA: BALANCE DE COMPROBACIÓN
+      const balanceRows: any[][] = [
+        ["SISTEMA CONTABLE"],
+        ["BALANCE DE COMPROBACIÓN"],
+        [],
+        ["No.", "Cuenta Mayor", "Suma Debe (Q)", "Suma Haber (Q)", "Saldo Deudor (Q)", "Saldo Acreedor (Q)"]
+      ];
+
+      catalog.forEach((c) => {
+        balanceRows.push([
+          c.num,
+          c.name,
+          formatCurrency(c.debe),
+          formatCurrency(c.haber),
+          c.balanceType === 'Deudor' ? formatCurrency(c.balance) : "",
+          c.balanceType === 'Acreedor' ? formatCurrency(c.balance) : ""
+        ]);
+      });
+
+      // Sumas iguales de comprobación
+      balanceRows.push([
+        "",
+        "SUMAS IGUALES",
+        formatCurrency(globalSums.debeSum),
+        formatCurrency(globalSums.haberSum),
+        formatCurrency(globalSums.deudorSum),
+        formatCurrency(globalSums.acreedorSum)
+      ]);
+
+      const wsBalance = XLSX.utils.aoa_to_sheet(balanceRows);
+      wsBalance['!cols'] = [
+        { wch: 8 },  // No.
+        { wch: 35 }, // Cuenta Mayor
+        { wch: 20 }, // Suma Debe
+        { wch: 20 }, // Suma Haber
+        { wch: 20 }, // Saldo Deudor
+        { wch: 20 }  // Saldo Acreedor
+      ];
+      XLSX.utils.book_append_sheet(wb, wsBalance, "Balance de Comprobación");
+
+
+      // Guardar archivo Excel
       const dateStr = new Date().toISOString().split('T')[0];
       XLSX.writeFile(wb, `Reporte_Contable_${dateStr}.xlsx`);
       showToast('Saldos exportados a Excel.');
