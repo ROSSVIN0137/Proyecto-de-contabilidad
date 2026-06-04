@@ -4,13 +4,1308 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Sistema Contable Pro</title>
+    <!-- Google Fonts -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+    
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+      tailwind.config = {
+        theme: {
+          extend: {
+            fontFamily: {
+              sans: ["Inter", "sans-serif"],
+              mono: ["JetBrains Mono", "monospace"],
+            }
+          }
+        }
+      }
+    </script>
+    
+    <!-- Lucide Icons CDN -->
+    <script src="https://unpkg.com/lucide@latest"></script>
+    
+    <!-- SheetJS (xlsx) CDN -->
+    <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+
+    <style>
+      /* Smooth transitions */
+      .fade-in {
+        animation: fadeIn 0.4s ease-out forwards;
+      }
+      @keyframes fadeIn {
+        from { opacity: 0; transform: translateY(8px); }
+        to { opacity: 1; transform: translateY(0); }
+      }
+      /* Custom scrollbars */
+      ::-webkit-scrollbar {
+        width: 6px;
+        height: 6px;
+      }
+      ::-webkit-scrollbar-track {
+        background: #f1f5f9;
+        border-radius: 4px;
+      }
+      ::-webkit-scrollbar-thumb {
+        background: #cbd5e1;
+        border-radius: 4px;
+      }
+      ::-webkit-scrollbar-thumb:hover {
+        background: #94a3b8;
+      }
+    </style>
   </head>
-  <body class="bg-slate-50 text-slate-900 font-sans antialiased min-h-screen">
+  <body class="bg-[#ECF0F1] text-[#2C3E50] font-sans antialiased min-h-screen selection:bg-[#34495E]/20">
     <div id="root"></div>
-    <script type="module" src="/src/main.tsx"></script>
+
+    <script>
+      // --- STATE ENGINE ---
+      const state = {
+        isStarted: false,
+        transactions: [],
+        activeTab: 'diario', // 'diario' | 'mayor' | 'balance'
+        formConcept: '',
+        formLines: [
+          { cuenta: '', debe: '', haber: '' },
+          { cuenta: '', debe: '', haber: '' }
+        ],
+        showConfirmModal: false,
+        toast: null,
+        undoQueue: null
+      };
+
+      // --- INITIAL LOAD & PERSISTENCE ---
+      try {
+        const stored = localStorage.getItem('contabilidad_pro_data');
+        if (stored) {
+          state.transactions = JSON.parse(stored);
+        } else {
+          state.transactions = [];
+          localStorage.setItem('contabilidad_pro_data', JSON.stringify([]));
+        }
+      } catch (e) {
+        console.error("Error al acceder a localStorage", e);
+      }
+
+      function saveTransactions(txs) {
+        state.transactions = txs;
+        try {
+          localStorage.setItem('contabilidad_pro_data', JSON.stringify(txs));
+        } catch (e) {
+          console.error("Fallo al guardar datos", e);
+        }
+        render();
+      }
+
+      // --- ALERTS & TOAST SYSTEM ---
+      let toastTimer = null;
+      function showToast(message, type = 'success', action = null) {
+        state.toast = { message, type, action };
+        
+        if (toastTimer) clearTimeout(toastTimer);
+        
+        renderToast();
+        
+        toastTimer = setTimeout(() => {
+          dismissToast();
+        }, action ? 8000 : 4000);
+      }
+
+      function dismissToast() {
+        state.toast = null;
+        renderToast();
+      }
+
+      // --- CURRENCY FORMATTER ---
+      function formatCurrency(amount) {
+        return new Intl.NumberFormat('es-GT', {
+          style: 'currency',
+          currency: 'GTQ',
+          minimumFractionDigits: 2,
+        }).format(amount).replace('GTQ', 'Q ');
+      }
+
+      // --- ACCCOUNT CALCULATOR ENGINE ---
+      function calculateEngine() {
+        const dict = {};
+        let accountCounter = 1;
+
+        state.transactions.forEach((tx, idx) => {
+          tx.lineas.forEach(line => {
+            let cleanName = line.cuenta.trim();
+            if (!cleanName) return;
+
+            const normalizedName = cleanName.replace(/^a[\.\s]+|^a\s+/i, '').trim();
+            const key = normalizedName.toUpperCase();
+
+            if (!dict[key]) {
+              dict[key] = {
+                num: accountCounter++,
+                name: normalizedName,
+                debe: 0,
+                haber: 0,
+                history: []
+              };
+            }
+
+            dict[key].debe += line.debe;
+            dict[key].haber += line.haber;
+            dict[key].history.push({
+              pda: tx.concepto.split(' - ')[0] || `Pda ${idx + 1}`,
+              debe: line.debe,
+              haber: line.haber
+            });
+          });
+        });
+
+        return Object.values(dict).map(acc => {
+          const balance = Math.abs(acc.debe - acc.haber);
+          let balanceType = 'Nulo';
+          
+          if (acc.debe > acc.haber) {
+            balanceType = 'Deudor';
+          } else if (acc.haber > acc.debe) {
+            balanceType = 'Acreedor';
+          }
+
+          return {
+            ...acc,
+            balance,
+            balanceType
+          };
+        }).sort((a, b) => a.num - b.num);
+      }
+
+      // --- DRAFT FORM UTILS ---
+      function calcActiveFormTotals() {
+        let tDebe = 0;
+        let tHaber = 0;
+        state.formLines.forEach(line => {
+          tDebe += parseFloat(line.debe) || 0;
+          tHaber += parseFloat(line.haber) || 0;
+        });
+        return { tDebe, tHaber };
+      }
+
+      // --- ACTIONS ---
+      function handleStartApp() {
+        state.isStarted = true;
+        render();
+      }
+
+      function handleBackToLanding() {
+        state.isStarted = false;
+        render();
+      }
+
+      function handleSwitchTab(tabName) {
+        state.activeTab = tabName;
+        render();
+      }
+
+      function handleAddFormLine() {
+        state.formLines.push({ cuenta: '', debe: '', haber: '' });
+        renderFullFormLines();
+      }
+
+      function handleRemoveFormLine(index) {
+        if (state.formLines.length <= 2) {
+          showToast('Se requiere un mínimo de 2 líneas para el registro.', 'error');
+          return;
+        }
+        state.formLines.splice(index, 1);
+        renderFullFormLines();
+      }
+
+      function handleFormLineChange(index, field, value) {
+        state.formLines[index][field] = value;
+        updateFormTotals();
+      }
+
+      function handleConceptChange(value) {
+        state.formConcept = value;
+      }
+
+      function handleDeleteTransaction(id) {
+        const backup = [...state.transactions];
+        const filtered = state.transactions.filter(t => t.id !== id);
+        
+        state.undoQueue = () => {
+          saveTransactions(backup);
+          showToast('Registro restaurado.', 'success');
+        };
+
+        saveTransactions(filtered);
+        showToast('Partida eliminada sin alterar el catálogo.', 'success', {
+          label: 'Deshacer',
+          onTrigger: 'triggerUndo()'
+        });
+      }
+
+      function triggerUndo() {
+        if (state.undoQueue) {
+          state.undoQueue();
+          state.undoQueue = null;
+        }
+        dismissToast();
+      }
+
+      function handleClearAllData() {
+        const backup = [...state.transactions];
+        state.undoQueue = () => {
+          saveTransactions(backup);
+          showToast('Datos restaurados del libro.', 'success');
+        };
+        
+        saveTransactions([]);
+        state.showConfirmModal = false;
+        
+        showToast('Historial y movimientos borrados.', 'info', {
+          label: 'Deshacer',
+          onTrigger: 'triggerUndo()'
+        });
+      }
+
+      function handleSaveTransaction(event) {
+        if (event) event.preventDefault();
+
+        const concept = state.formConcept.trim();
+        if (!concept) {
+          showToast('Ingresa el concepto de la operación.', 'error');
+          return;
+        }
+
+        const filledLines = state.formLines.filter(line => 
+          line.cuenta.trim() !== '' || line.debe !== '' || line.haber !== ''
+        );
+
+        if (filledLines.length < 2) {
+          showToast('Ingresa al menos 2 líneas para la partida.', 'error');
+          return;
+        }
+
+        let hasErr = false;
+        const sanitizedLines = [];
+        let dSum = 0;
+        let hSum = 0;
+
+        for (let i = 0; i < filledLines.length; i++) {
+          const l = filledLines[i];
+          const accName = l.cuenta.trim();
+          const dbVal = parseFloat(l.debe) || 0;
+          const hbVal = parseFloat(l.haber) || 0;
+
+          if (!accName) {
+            showToast(`Falta cuenta en línea ${i + 1}.`, 'error');
+            hasErr = true;
+            break;
+          }
+          if (dbVal <= 0 && hbVal <= 0) {
+            showToast(`Monto debe ser mayor a 0 en "${accName}".`, 'error');
+            hasErr = true;
+            break;
+          }
+          if (dbVal > 0 && hbVal > 0) {
+            showToast(`Registro doble error en "${accName}".`, 'error');
+            hasErr = true;
+            break;
+          }
+
+          sanitizedLines.push({
+            cuenta: accName,
+            debe: dbVal,
+            haber: hbVal
+          });
+          dSum += dbVal;
+          hSum += hbVal;
+        }
+
+        if (hasErr) return;
+
+        if (Math.abs(dSum - hSum) > 0.01) {
+          showToast(`No cuadra. Debe: ${formatCurrency(dSum)}, Haber: ${formatCurrency(hSum)}.`, 'error');
+          return;
+        }
+
+        const nextIdx = state.transactions.length + 1;
+        const officialConcept = /^pda/i.test(concept) ? concept : `Pda {Index} - {Concept}`.replace('{Index}', nextIdx).replace('{Concept}', concept);
+
+        const newTx = {
+          id: `tx-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`,
+          concepto: officialConcept,
+          fecha: new Date().toISOString().split('T')[0],
+          lineas: sanitizedLines
+        };
+
+        saveTransactions([...state.transactions, newTx]);
+
+        // Reset form inputs
+        state.formConcept = '';
+        state.formLines = [
+          { cuenta: '', debe: '', haber: '' },
+          { cuenta: '', debe: '', haber: '' }
+        ];
+
+        showToast('Partida guardada.');
+      }
+
+      // --- EXPORT SHEET COMPONENT (SHEETJS) ---
+      function handleExportExcel() {
+        const catalog = calculateEngine();
+        if (catalog.length === 0) {
+          showToast('No hay datos para exportar.', 'error');
+          return;
+        }
+
+        try {
+          const wb = XLSX.utils.book_new();
+
+          // Compute balance sums
+          const globalSums = catalog.reduce((acc, current) => {
+            acc.debeSum += current.debe;
+            acc.haberSum += current.haber;
+            if (current.balanceType === 'Deudor') acc.deudorSum += current.balance;
+            if (current.balanceType === 'Acreedor') acc.acreedorSum += current.balance;
+            return acc;
+          }, { debeSum: 0, haberSum: 0, deudorSum: 0, acreedorSum: 0 });
+
+          // 1. GENERAR PESTAÑA: LIBRO DIARIO
+          const diarioRows = [
+            ["SISTEMA CONTABLE"],
+            ["LIBRO DIARIO DE OPERACIONES"],
+            [],
+            ["Cuentas / Detalle", "Debe (Q)", "Haber (Q)"]
+          ];
+
+          state.transactions.forEach((tx) => {
+            diarioRows.push([tx.concepto, "", ""]);
+            let txSumDebe = 0;
+            let txSumHaber = 0;
+
+            tx.lineas.forEach(l => {
+              const isHaber = l.haber > 0;
+              const cuentaConSangria = isHaber ? "    " + l.cuenta : l.cuenta;
+              diarioRows.push([
+                cuentaConSangria,
+                l.debe > 0 ? formatCurrency(l.debe) : "",
+                l.haber > 0 ? formatCurrency(l.haber) : ""
+              ]);
+              txSumDebe += l.debe;
+              txSumHaber += l.haber;
+            });
+
+            diarioRows.push([
+              "  Totales de la Partida",
+              formatCurrency(txSumDebe),
+              formatCurrency(txSumHaber)
+            ]);
+            diarioRows.push(["", "", ""]);
+          });
+
+          const wsDiario = XLSX.utils.aoa_to_sheet(diarioRows);
+          wsDiario['!cols'] = [
+            { wch: 45 }, // Cuentas
+            { wch: 20 }, // Debe
+            { wch: 20 }  // Haber
+          ];
+          XLSX.utils.book_append_sheet(wb, wsDiario, "Libro Diario");
+
+          // 2. GENERAR PESTAÑA: LIBRO MAYOR (CUENTAS T)
+          const mayorRows = [
+            ["SISTEMA CONTABLE"],
+            ["LIBRO MAYOR (CUENTAS T)"],
+            [],
+          ];
+
+          catalog.forEach((c) => {
+            mayorRows.push([`${c.num}. ${c.name.toUpperCase()}`, "", "", ""]);
+            mayorRows.push(["DEBE (Cargos)", "", "HABER (Abonos)", ""]);
+            mayorRows.push(["Referencia", "Monto (Q)", "Referencia", "Monto (Q)"]);
+
+            const charges = c.history.filter(h => h.debe > 0);
+            const payments = c.history.filter(h => h.haber > 0);
+            const maxLen = Math.max(charges.length, payments.length);
+
+            for (let i = 0; i < maxLen; i++) {
+              const chg = charges[i];
+              const pay = payments[i];
+              mayorRows.push([
+                chg ? chg.pda : "",
+                chg ? formatCurrency(chg.debe) : "",
+                pay ? pay.pda : "",
+                pay ? formatCurrency(pay.haber) : ""
+              ]);
+            }
+
+            mayorRows.push([
+              "Suma Debe:",
+              formatCurrency(c.debe),
+              "Suma Haber:",
+              formatCurrency(c.haber)
+            ]);
+
+            const saldoStr = c.balanceType === 'Nulo' ? "Liquidada" : `${c.balanceType} (${formatCurrency(c.balance)})`;
+            mayorRows.push([
+              "Saldo Final (Saldo):",
+              saldoStr,
+              "",
+              ""
+            ]);
+
+            mayorRows.push(["", "", "", ""]);
+            mayorRows.push(["", "", "", ""]);
+          });
+
+          const wsMayor = XLSX.utils.aoa_to_sheet(mayorRows);
+          wsMayor['!cols'] = [
+            { wch: 18 }, // Ref Debe
+            { wch: 20 }, // Val Debe
+            { wch: 18 }, // Ref Haber
+            { wch: 20 }  // Val Haber
+          ];
+          XLSX.utils.book_append_sheet(wb, wsMayor, "Libro Mayor");
+
+          // 3. GENERAR PESTAÑA: BALANCE DE COMPROBACIÓN
+          const balanceRows = [
+            ["SISTEMA CONTABLE"],
+            ["BALANCE DE COMPROBACIÓN"],
+            [],
+            ["No.", "Cuenta Mayor", "Suma Debe (Q)", "Suma Haber (Q)", "Saldo Deudor (Q)", "Saldo Acreedor (Q)"]
+          ];
+
+          catalog.forEach((c) => {
+            balanceRows.push([
+              c.num,
+              c.name,
+              formatCurrency(c.debe),
+              formatCurrency(c.haber),
+              c.balanceType === 'Deudor' ? formatCurrency(c.balance) : "",
+              c.balanceType === 'Acreedor' ? formatCurrency(c.balance) : ""
+            ]);
+          });
+
+          balanceRows.push([
+            "",
+            "SUMAS IGUALES",
+            formatCurrency(globalSums.debeSum),
+            formatCurrency(globalSums.haberSum),
+            formatCurrency(globalSums.deudorSum),
+            formatCurrency(globalSums.acreedorSum)
+          ]);
+
+          const wsBalance = XLSX.utils.aoa_to_sheet(balanceRows);
+          wsBalance['!cols'] = [
+            { wch: 8 },  // No.
+            { wch: 35 }, // Cuenta
+            { wch: 20 }, // Suma Debe
+            { wch: 20 }, // Suma Haber
+            { wch: 20 }, // Saldo Deudor
+            { wch: 20 }  // Saldo Acreedor
+          ];
+          XLSX.utils.book_append_sheet(wb, wsBalance, "Balance de Comprobación");
+
+          const dateStr = new Date().toISOString().split('T')[0];
+          XLSX.writeFile(wb, `Reporte_Contable_${dateStr}.xlsx`);
+          showToast('Saldos exportados a Excel de forma organizada.');
+        } catch (e) {
+          console.error(e);
+          showToast('Fallo al exportar reporte.', 'error');
+        }
+      }
+
+      // --- IMPORT SHEET COMPONENT (SHEETJS) ---
+      function handleImportExcel(event) {
+        const files = event.target.files;
+        if (!files || files.length === 0) return;
+        const file = files[0];
+
+        const reader = new FileReader();
+        reader.onload = (evt) => {
+          try {
+            if (!evt.target?.result) return;
+            const data = new Uint8Array(evt.target.result);
+            const workbook = XLSX.read(data, { type: 'array' });
+            const firstSheetName = workbook.SheetNames[0];
+            const sheet = workbook.Sheets[firstSheetName];
+            const rows = XLSX.utils.sheet_to_json(sheet, { header: 1 });
+            
+            const importedTxs = [];
+            let currentTx = null;
+
+            rows.forEach((row, rIdx) => {
+              if (!row || row.length === 0) return;
+              
+              const colA = String(row[0] || "").trim();
+              const colB = String(row[1] || "").trim();
+              
+              if (colA.toLowerCase().includes('suma') || colB.toLowerCase().includes('suma')) return;
+
+              const cleanNumber = (val) => {
+                if (val == null || val === '') return 0;
+                if (typeof val === 'number') return val;
+                const str = String(val).replace(/[^0-9\.\-]/g, '');
+                return parseFloat(str) || 0;
+              };
+
+              const debeVal = cleanNumber(row[2]);
+              const haberVal = cleanNumber(row[3]);
+
+              if (/^(pda|partida)/i.test(colA) || /^(pda|partida)/i.test(colB)) {
+                if (currentTx && currentTx.lineas.length > 0) {
+                  importedTxs.push(currentTx);
+                }
+                currentTx = {
+                  id: `imported-${rIdx}-${Date.now()}`,
+                  concepto: colA || colB,
+                  fecha: new Date().toISOString().split('T')[0],
+                  lineas: []
+                };
+                return;
+              }
+
+              if (colB && (debeVal > 0 || haberVal > 0)) {
+                if (!currentTx) {
+                  currentTx = {
+                    id: `imported-unnamed-${rIdx}`,
+                    concepto: 'Pda Importada ' + (importedTxs.length + 1),
+                    fecha: new Date().toISOString().split('T')[0],
+                    lineas: []
+                  };
+                }
+                currentTx.lineas.push({
+                  cuenta: colB,
+                  debe: debeVal,
+                  haber: haberVal
+                });
+              }
+            });
+
+            if (currentTx && currentTx.lineas.length > 0) {
+              importedTxs.push(currentTx);
+            }
+
+            if (importedTxs.length > 0) {
+              saveTransactions(importedTxs);
+              showToast(`Se importaron ${importedTxs.length} partidas de Excel.`);
+            } else {
+              showToast('Formato de Excel no compatible.', 'error');
+            }
+          } catch (err) {
+            console.error(err);
+            showToast('Error de importación.', 'error');
+          }
+          document.getElementById('excel-file-input').value = '';
+        };
+        reader.readAsArrayBuffer(file);
+      }
+
+      // --- RENDERING ROUTINES ---
+      function render() {
+        const root = document.getElementById('root');
+        
+        if (!state.isStarted) {
+          root.innerHTML = getLandingHTML();
+        } else {
+          root.innerHTML = getWorkspaceHTML();
+          // Render current lines and set dynamic binds
+          renderFullFormLines();
+        }
+        
+        // Re-bind Lucide icons
+        lucide.createIcons();
+      }
+
+      function getLandingHTML() {
+        return `
+          <div class="min-h-screen flex flex-col justify-center items-center p-6 relative overflow-hidden fade-in">
+            <div class="max-w-5xl w-full mx-auto grid grid-cols-1 lg:grid-cols-12 gap-8 items-center relative z-10">
+              
+              <!-- Integrantes Izquierda -->
+              <div class="lg:col-span-3 space-y-4">
+                <div class="bg-white p-5 rounded-xl border border-slate-300 shadow-sm transition-all text-center">
+                  <span class="text-[10px] font-bold text-[#34495E]/50 uppercase tracking-widest block mb-1">INTEGRANTE</span>
+                  <p class="font-extrabold text-[#2C3E50] text-[13.5px] leading-snug">
+                    Mardoqueo Alfredo González López
+                  </p>
+                </div>
+
+                <div class="bg-white p-5 rounded-xl border border-slate-300 shadow-sm transition-all text-center">
+                  <span class="text-[10px] font-bold text-[#34495E]/50 uppercase tracking-widest block mb-1">INTEGRANTE</span>
+                  <p class="font-extrabold text-[#2C3E50] text-[13.5px] leading-snug">
+                    Erik Diego Francisco Orozco Vásquez
+                  </p>
+                </div>
+              </div>
+
+              <!-- Ventana Principal -->
+              <div class="lg:col-span-6 bg-white rounded-2xl border-2 border-[#2C3E50] p-10 md:p-14 text-center shadow-md relative">
+                <div class="mx-auto w-14 h-14 bg-[#ECF0F1] rounded-xl flex items-center justify-center mb-6 text-[#2C3E50] border border-slate-200">
+                  <i data-lucide="calculator" class="w-7 h-7"></i>
+                </div>
+
+                <h1 class="text-3xl md:text-4xl font-extrabold tracking-tight text-[#2C3E50] mb-8">
+                  Sistema Contable
+                </h1>
+
+                <button
+                  id="iniciar-btn"
+                  onclick="handleStartApp()"
+                  class="inline-flex items-center justify-center gap-3 px-12 py-3.5 bg-[#2C3E50] hover:bg-[#34495E] text-white font-extrabold text-sm rounded-xl tracking-wider select-none active:scale-95 cursor-pointer transition-all w-full sm:w-auto"
+                >
+                  Iniciar
+                  <i data-lucide="chevron-right" class="w-4 h-4"></i>
+                </button>
+              </div>
+
+              <!-- Integrantes Derecha -->
+              <div class="lg:col-span-3 space-y-4">
+                <div class="bg-white p-5 rounded-xl border border-slate-300 shadow-sm transition-all text-center">
+                  <span class="text-[10px] font-bold text-[#34495E]/50 uppercase tracking-widest block mb-1">INTEGRANTE</span>
+                  <p class="font-extrabold text-[#2C3E50] text-[13.5px] leading-snug">
+                    Jefferson Daniel Paredes Orozco
+                  </p>
+                </div>
+
+                <div class="bg-white p-5 rounded-xl border border-slate-300 shadow-sm transition-all text-center">
+                  <span class="text-[10px] font-bold text-[#34495E]/50 uppercase tracking-widest block mb-1">INTEGRANTE</span>
+                  <p class="font-extrabold text-[#2C3E50] text-[13.5px] leading-snug">
+                    Rossvin Omar Chúm Godínez
+                  </p>
+                </div>
+              </div>
+
+            </div>
+          </div>
+        `;
+      }
+
+      function getWorkspaceHTML() {
+        const catalog = calculateEngine();
+        
+        // Sum total metrics
+        const globalSums = catalog.reduce((acc, current) => {
+          acc.debeSum += current.debe;
+          acc.haberSum += current.haber;
+          if (current.balanceType === 'Deudor') acc.deudorSum += current.balance;
+          if (current.balanceType === 'Acreedor') acc.acreedorSum += current.balance;
+          return acc;
+        }, { debeSum: 0, haberSum: 0, deudorSum: 0, acreedorSum: 0 });
+
+        const isBalanced = Math.abs(globalSums.debeSum - globalSums.haberSum) < 0.01;
+
+        // Render Tabs buttons
+        const tabList = [
+          { id: 'diario', icon: 'book-open', label: 'Libro Diario' },
+          { id: 'mayor', icon: 'folder-open', label: 'Libro Mayor' },
+          { id: 'balance', icon: 'pie-chart', label: 'Balance de Comprobación' }
+        ];
+
+        const tabButtonsHTML = tabList.map(tab => {
+          const isSelected = state.activeTab === tab.id;
+          return `
+            <button
+              id="tab-${tab.id}-btn"
+              onclick="handleSwitchTab('${tab.id}')"
+              class="flex-1 sm:flex-none inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl text-sm font-bold cursor-pointer transition-all ${
+                isSelected
+                  ? 'bg-[#2C3E50] text-white shadow-xs'
+                  : 'text-slate-600 hover:bg-slate-100 hover:text-[#2C3E50]'
+              }"
+            >
+              <i data-lucide="${tab.icon}" class="w-4 h-4"></i>
+              ${tab.label}
+            </button>
+          `;
+        }).join('');
+
+        let activeScreenContentHTML = '';
+        if (state.activeTab === 'diario') {
+          activeScreenContentHTML = getLibroDiarioScreenHTML();
+        } else if (state.activeTab === 'mayor') {
+          activeScreenContentHTML = getLibroMayorScreenHTML(catalog);
+        } else {
+          activeScreenContentHTML = getBalanceScreenHTML(catalog, globalSums, isBalanced);
+        }
+
+        return `
+          <div class="max-w-7xl mx-auto px-4 py-8 sm:px-6 lg:px-8 fade-in">
+            <!-- CABECERA -->
+            <header class="mb-8 flex flex-col md:flex-row md:items-center md:justify-between gap-4 border-b border-slate-200 pb-6">
+              <div class="flex items-center gap-3">
+                <div class="p-2.5 bg-[#2C3E50] text-white rounded-xl shadow-md border border-[#34495E]/20">
+                  <i data-lucide="calculator" class="w-6 h-6"></i>
+                </div>
+                <h1 class="text-2xl font-extrabold tracking-tight text-[#2C3E50]">Sistema Contable</h1>
+              </div>
+
+              <!-- ESTADO GLOBAL -->
+              <div class="flex flex-wrap items-center gap-3">
+                <div id="workspace-status" class="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl text-xs font-bold border shadow-xs ${
+                  isBalanced && state.transactions.length > 0
+                    ? 'bg-emerald-50 text-emerald-800 border-emerald-250'
+                    : state.transactions.length === 0
+                    ? 'bg-amber-50 text-amber-600 border-amber-200'
+                    : 'bg-[#E74C3C]/5 text-[#E74C3C] border-[#E74C3C]/20'
+                }">
+                  <span class="w-2 h-2 rounded-full ${
+                    isBalanced && state.transactions.length > 0 ? 'bg-emerald-500 animate-pulse' : state.transactions.length === 0 ? 'bg-amber-500' : 'bg-[#E74C3C]'
+                  }"></span>
+                  ${isBalanced && state.transactions.length > 0 ? 'Cuadrado' : state.transactions.length === 0 ? 'Sin Registros' : 'No cuadrado'}
+                </div>
+
+                <div class="bg-white text-[#2C3E50] px-3.5 py-1.5 rounded-xl text-xs font-bold border border-slate-300 shadow-xs">
+                  Registros: <span class="font-mono text-sm font-extrabold">${state.transactions.length}</span>
+                </div>
+
+                <button
+                  onclick="handleBackToLanding()"
+                  class="px-3.5 py-1.5 bg-slate-200 hover:bg-slate-300 text-[#34495E] rounded-xl text-xs font-bold transition-all cursor-pointer inline-flex items-center gap-1.5 border border-slate-300"
+                >
+                  <i data-lucide="users" class="w-3.5 h-3.5"></i>
+                  Créditos
+                </button>
+              </div>
+            </header>
+
+            <!-- MENÚ DE HERRAMIENTAS -->
+            <nav class="bg-white p-3 rounded-xl border border-slate-200 shadow-xs flex flex-col sm:flex-row gap-3 items-center justify-between mb-8">
+              <div class="flex flex-wrap gap-1.5 w-full sm:w-auto">
+                ${tabButtonsHTML}
+              </div>
+
+              <!-- BOTONES DE ACCIÓN EXCEL -->
+              <div class="flex flex-wrap gap-2 w-full sm:w-auto justify-end">
+                <div class="relative inline-block">
+                  <button
+                    onclick="document.getElementById('excel-file-input').click()"
+                    class="inline-flex items-center gap-2 px-3.5 py-1.5 bg-slate-100 hover:bg-slate-200 border border-slate-300 text-[#34495E] text-xs font-bold rounded-lg cursor-pointer transition-all"
+                  >
+                    <i data-lucide="upload" class="w-3.5 h-3.5"></i>
+                    Importar Excel
+                  </button>
+                  <input 
+                    type="file" 
+                    id="excel-file-input" 
+                    onchange="handleImportExcel(event)" 
+                    accept=".xlsx,.xls" 
+                    class="hidden" 
+                  />
+                </div>
+
+                <button
+                  onclick="handleExportExcel()"
+                  class="inline-flex items-center gap-2 px-3.5 py-1.5 bg-[#2C3E50] hover:bg-[#34495E] text-white text-xs font-bold rounded-lg cursor-pointer transition-all"
+                >
+                  <i data-lucide="download" class="w-3.5 h-3.5"></i>
+                  Exportar XLS
+                </button>
+
+                <button
+                  onclick="openWipeConfirmation()"
+                  class="inline-flex items-center justify-center p-2 rounded-lg bg-white border border-slate-300 text-[#C0392B] hover:bg-[#E74C3C]/5 hover:border-[#E74C3C]/30 cursor-pointer transition-all"
+                  title="Borrar movimientos"
+                >
+                  <i data-lucide="trash-2" class="w-4 h-4"></i>
+                </button>
+              </div>
+            </nav>
+
+            <!-- COPO ACCIONAL PRINCIPAL -->
+            <main class="min-h-[480px]">
+              ${activeScreenContentHTML}
+            </main>
+          </div>
+
+          <!-- MODAL DE CONFIRMACIÓN -->
+          <div id="confirm-modal" class="hidden fixed inset-0 bg-[#2C3E50]/40 backdrop-blur-xs flex items-center justify-center p-4 z-50">
+            <div class="bg-white rounded-2xl max-w-sm w-full p-6 border border-slate-200 shadow-xl scale-95 transition-all">
+              <div class="w-12 h-12 rounded-full bg-[#E74C3C]/15 flex items-center justify-center text-[#E74C3C] mb-4">
+                <i data-lucide="alert-triangle" class="w-6 h-6"></i>
+              </div>
+              <h3 class="text-base font-bold text-[#2C3E50] mb-2">¿Seguro que deseas borrar todo?</h3>
+              <p class="text-xs text-slate-500 mb-6 leading-relaxed">
+                Esta acción eliminará todas las partidas y registros activos de la memoria local de forma irreversible.
+              </p>
+              <div class="flex gap-3">
+                <button
+                  onclick="closeWipeConfirmation()"
+                  class="flex-1 px-4 py-2 bg-slate-100 hover:bg-slate-200 text-[#34495E] text-xs font-bold rounded-xl border border-slate-255 cursor-pointer"
+                >
+                  Cancelar
+                </button>
+                <button
+                  onclick="handleClearAllData()"
+                  class="flex-1 px-4 py-2 bg-[#E74C3C] hover:bg-[#C0392B] text-white text-xs font-bold rounded-xl cursor-pointer"
+                >
+                  Sí, Borrar Todo
+                </button>
+              </div>
+            </div>
+          </div>
+        `;
+      }
+
+      function getLibroDiarioScreenHTML() {
+        let partidasListHTML = '';
+        
+        if (state.transactions.length === 0) {
+          partidasListHTML = `
+            <div class="bg-white rounded-xl border border-slate-300 border-dashed p-14 text-center">
+              <div class="p-3.5 bg-slate-50 text-slate-400 rounded-full w-fit mx-auto mb-3">
+                <i data-lucide="book-open" class="w-6.5 h-6.5"></i>
+              </div>
+              <h3 class="text-sm font-bold text-slate-700">Libro Diario Despejado</h3>
+            </div>
+          `;
+        } else {
+          partidasListHTML = state.transactions.map(tx => {
+            const tDebe = tx.lineas.reduce((acc, current) => acc + current.debe, 0);
+            const tHaber = tx.lineas.reduce((acc, current) => acc + current.haber, 0);
+            const isTxBalanced = Math.abs(tDebe - tHaber) < 0.01;
+
+            const linesHTML = tx.lineas.map(l => {
+              const isHaber = l.haber > 0;
+              return `
+                <tr class="border-b border-slate-100 hover:bg-slate-50/50">
+                  <td class="py-2 px-5 ${isHaber ? 'pl-9 text-slate-500 font-medium' : 'font-semibold text-[#2C3E50]'}">
+                    ${l.cuenta}
+                  </td>
+                  <td class="text-right py-2 px-5 font-mono text-xs font-bold text-slate-600">
+                    ${l.debe > 0 ? formatCurrency(l.debe) : '—'}
+                  </td>
+                  <td class="text-right py-2 px-5 font-mono text-xs font-bold text-slate-600">
+                    ${l.haber > 0 ? formatCurrency(l.haber) : '—'}
+                  </td>
+                </tr>
+              `;
+            }).join('');
+
+            return `
+              <div class="bg-white rounded-xl border border-slate-200 overflow-hidden shadow-xs mb-4">
+                <div class="bg-slate-50 border-b border-slate-200 px-5 py-3.5 flex items-center justify-between gap-4">
+                  <div class="flex flex-col">
+                    <span class="text-sm font-bold text-[#2C3E50]">${tx.concepto}</span>
+                    <span class="text-[10px] text-slate-400 font-mono mt-0.5">Fecha: ${tx.fecha}</span>
+                  </div>
+
+                  <div class="flex items-center gap-2">
+                    ${!isTxBalanced ? `
+                      <span class="bg-[#E74C3C]/10 text-[#E74C3C] text-[10px] font-bold px-2 py-0.5 rounded border border-[#E74C3C]/20">
+                        No cuadrado
+                      </span>
+                    ` : ''}
+                    
+                    <button
+                      onclick="handleDeleteTransaction('${tx.id}')"
+                      class="p-1.5 bg-white border border-slate-200 text-slate-400 hover:text-[#C0392B] hover:border-[#E74C3C]/30 rounded-lg shadow-xs transition-colors cursor-pointer"
+                      title="Eliminar partida"
+                    >
+                      <i data-lucide="trash-2" class="w-3.5 h-3.5"></i>
+                    </button>
+                  </div>
+                </div>
+
+                <div class="overflow-x-auto w-full">
+                  <table class="w-full text-sm border-none">
+                    <thead>
+                      <tr class="bg-slate-50/50">
+                        <th class="text-left py-2 px-5 text-slate-500 text-xs font-bold border-b border-slate-100">Cuentas</th>
+                        <th class="text-right py-2 px-5 text-slate-500 text-xs font-bold border-b border-slate-100 w-28">Debe</th>
+                        <th class="text-right py-2 px-5 text-slate-500 text-xs font-bold border-b border-slate-100 w-28">Haber</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      ${linesHTML}
+                      <tr class="bg-slate-50/20 font-bold text-xs">
+                        <td class="py-2.5 px-5 text-right text-slate-500 uppercase font-extrabold">Totales</td>
+                        <td class="text-right py-2.5 px-5 font-mono text-[#2C3E50] border-t border-slate-200">${formatCurrency(tDebe)}</td>
+                        <td class="text-right py-2.5 px-5 font-mono text-[#2C3E50] border-t border-slate-200">${formatCurrency(tHaber)}</td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            `;
+          }).join('');
+        }
+
+        return `
+          <div class="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
+            <!-- IZQUIERDA: MOSTRAR PARTIDAS -->
+            <div class="lg:col-span-7">
+              <h2 class="text-lg font-bold text-[#2C3E50] mb-6 flex items-center gap-2">
+                <i data-lucide="book-open" class="w-4.5 h-4.5 text-[#34495E]"></i>
+                Asientos del Libro Diario
+              </h2>
+              <div id="partidas-list-container">
+                ${partidasListHTML}
+              </div>
+            </div>
+
+            <!-- DERECHA: FORMULARIO DE INGRESO MANUAL -->
+            <div class="lg:col-span-5 bg-white p-6 rounded-xl border border-slate-200 shadow-xs lg:sticky lg:top-4">
+              <div class="flex items-center gap-2 mb-6 pb-4 border-b border-slate-150">
+                <i data-lucide="calculator" class="w-5 h-5 text-[#34495E]"></i>
+                <h2 class="text-base font-bold text-[#2C3E50]">Registrar Partida Manual</h2>
+              </div>
+
+              <form onsubmit="handleSaveTransaction(event)" class="space-y-5">
+                <div>
+                  <label class="block text-xs font-bold text-slate-500 uppercase mb-2">
+                    Concepto de Operación
+                  </label>
+                  <input
+                    id="form-concept"
+                    type="text"
+                    required
+                    oninput="handleConceptChange(this.value)"
+                    value="${state.formConcept}"
+                    class="w-full px-3 py-2.5 bg-slate-50 border border-slate-250 rounded-xl text-sm focus:outline-none focus:border-[#2C3E50] transition-colors"
+                    autocomplete="off"
+                  />
+                </div>
+
+                <div>
+                  <label class="block text-xs font-bold text-slate-500 uppercase mb-2">
+                    Cuentas y Valores
+                  </label>
+                  <div id="form-lines-container" class="space-y-2.5 max-h-[290px] overflow-y-auto pr-1">
+                    <!-- Dinámico -->
+                  </div>
+
+                  <button
+                    type="button"
+                    onclick="handleAddFormLine()"
+                    class="mt-3 inline-flex items-center gap-1.5 text-xs font-extrabold text-[#2C3E50] hover:text-[#34495E] bg-slate-100 hover:bg-slate-200 px-3.5 py-2 rounded-xl cursor-pointer transition-all"
+                  >
+                    <i data-lucide="plus" class="w-3 h-3"></i>
+                    Agregar Cuenta
+                  </button>
+                </div>
+
+                <!-- SUMARIOS Y CÁLCULOS EN VIVO -->
+                <div id="form-totals-summary" class="bg-slate-50 p-4 rounded-xl border border-slate-200 space-y-2">
+                  <!-- Se actualiza por JS -->
+                </div>
+
+                <button
+                  type="submit"
+                  class="w-full inline-flex items-center justify-center gap-2 px-4 py-3 bg-[#2C3E50] text-white rounded-xl text-sm font-bold shadow-xs hover:bg-[#34495E] active:scale-99 transition-all cursor-pointer"
+                >
+                  Guardar en Libro Diario
+                </button>
+              </form>
+            </div>
+          </div>
+        `;
+      }
+
+      function getLibroMayorScreenHTML(catalog) {
+        if (catalog.length === 0) {
+          return `
+            <div class="bg-white rounded-xl border border-slate-300 border-dashed p-16 text-center">
+              <div class="p-4 bg-slate-50 text-slate-400 rounded-full w-fit mx-auto mb-3">
+                <i data-lucide="folder-open" class="w-7 h-7"></i>
+              </div>
+              <h3 class="text-sm font-bold text-slate-700">Libro Mayor Vacío</h3>
+            </div>
+          `;
+        }
+
+        const cardsHTML = catalog.map(c => {
+          const charges = c.history.filter(h => h.debe > 0);
+          const payments = c.history.filter(h => h.haber > 0);
+          const maxRows = Math.max(charges.length, payments.length);
+
+          let ledgerRowsHTML = '';
+          for (let i = 0; i < maxRows; i++) {
+            const chg = charges[i];
+            const pay = payments[i];
+            ledgerRowsHTML += `
+              <tr class="text-xs hover:bg-slate-50/40">
+                <!-- Column izquierda DEBE -->
+                <td class="px-3 py-1.5 font-mono text-[10px] text-slate-400 border-r border-slate-100">${chg ? chg.pda : ''}</td>
+                <td class="px-3 py-1.5 font-mono font-bold text-right text-slate-600 border-r border-slate-200">${chg ? formatCurrency(chg.debe) : ''}</td>
+                <!-- Column derecha HABER -->
+                <td class="px-3 py-1.5 font-mono text-[10px] text-slate-400 border-r border-slate-100">${pay ? pay.pda : ''}</td>
+                <td class="px-3 py-1.5 font-mono font-bold text-right text-slate-600">${pay ? formatCurrency(pay.haber) : ''}</td>
+              </tr>
+            `;
+          }
+
+          const saldoLabel = c.balanceType === 'Nulo' ? 'Liquidada' : `${c.balanceType} (${formatCurrency(c.balance)})`;
+          const isLiquidated = c.balanceType === 'Nulo';
+
+          return `
+            <div class="bg-white rounded-xl border border-slate-200 overflow-hidden shadow-xs flex flex-col justify-between">
+              <header class="bg-slate-50 border-b border-slate-200 px-4 py-3 text-center">
+                <h3 class="text-sm font-extrabold tracking-tight text-[#2C3E50] capitalize truncate" title="${c.name}">
+                  ${c.num}. ${c.name}
+                </h3>
+              </header>
+
+              <div class="overflow-x-auto w-full flex-grow">
+                <table class="w-full text-left border-collapse">
+                  <thead>
+                    <tr class="bg-slate-50/20 text-[10px] uppercase font-bold text-slate-400 tracking-wider border-b border-slate-200">
+                      <th class="px-3 py-1 border-r border-slate-200" colspan="2">DEBE (Cargos)</th>
+                      <th class="px-3 py-1" colspan="2">HABER (Abonos)</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    ${ledgerRowsHTML}
+                    <!-- Totales -->
+                    <tr class="border-t border-slate-200 bg-slate-50/30 text-xs font-bold">
+                      <td class="px-3 py-2 text-slate-400 border-r border-slate-100" colspan="1">Suma:</td>
+                      <td class="px-3 py-2 text-right font-mono text-slate-700 border-r border-slate-200">${formatCurrency(c.debe)}</td>
+                      <td class="px-3 py-2 text-slate-400 border-r border-slate-100" colspan="1">Suma:</td>
+                      <td class="px-3 py-2 text-right font-mono text-slate-700">${formatCurrency(c.haber)}</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+
+              <footer class="bg-slate-50/70 border-t border-slate-200 px-4 py-2.5 flex items-center justify-between text-xs font-extrabold">
+                <span class="text-slate-450 text-[10px] uppercase">Saldo Final</span>
+                <span class="font-mono ${isLiquidated ? 'text-slate-400 font-bold' : 'text-[#2C3E50]'}" id="ledger-saldo-${c.num}">
+                  ${saldoLabel}
+                </span>
+              </footer>
+            </div>
+          `;
+        }).join('');
+
+        return `
+          <div>
+            <h2 class="text-lg font-bold text-[#2C3E50] mb-8 flex items-center gap-2">
+              <i data-lucide="folder-open" class="w-4.5 h-4.5 text-[#34495E]"></i>
+              Libro Mayor (Cuentas T)
+            </h2>
+            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+              ${cardsHTML}
+            </div>
+          </div>
+        `;
+      }
+
+      function getBalanceScreenHTML(catalog, globalSums, isBalanced) {
+        if (catalog.length === 0) {
+          return `
+            <div class="bg-white rounded-xl border border-slate-300 border-dashed p-16 text-center">
+              <div class="p-4 bg-slate-50 text-slate-400 rounded-full w-fit mx-auto mb-3">
+                <i data-lucide="pie-chart" class="w-7 h-7"></i>
+              </div>
+              <h3 class="text-sm font-bold text-slate-700">Balance No Generado</h3>
+            </div>
+          `;
+        }
+
+        const rowsHTML = catalog.map(c => {
+          return `
+            <tr class="hover:bg-slate-50/50">
+              <td class="py-2.5 px-6 font-mono text-xs font-bold text-slate-400 text-center border-r border-slate-100">${c.num}</td>
+              <td class="py-2.5 px-6 font-semibold text-[#2C3E50]">${c.name}</td>
+              <td class="py-2.5 px-6 text-right font-mono text-xs text-slate-600">${formatCurrency(c.debe)}</td>
+              <td class="py-2.5 px-6 text-right font-mono text-xs text-slate-600">${formatCurrency(c.haber)}</td>
+              <td class="py-2.5 px-6 text-right font-mono text-xs font-bold text-slate-800">${c.balanceType === 'Deudor' ? formatCurrency(c.balance) : ''}</td>
+              <td class="py-2.5 px-6 text-right font-mono text-xs font-bold text-slate-800">${c.balanceType === 'Acreedor' ? formatCurrency(c.balance) : ''}</td>
+            </tr>
+          `;
+        }).join('');
+
+        return `
+          <div>
+            <h2 class="text-lg font-bold text-[#2C3E50] mb-8 flex items-center gap-2">
+              <i data-lucide="pie-chart" class="w-4.5 h-4.5 text-[#34495E]"></i>
+              Balance de Comprobación
+            </h2>
+
+            <div class="bg-white rounded-xl border border-slate-200 overflow-hidden shadow-xs">
+              <div class="overflow-x-auto w-full">
+                <table class="w-full text-sm">
+                  <thead>
+                    <tr class="bg-slate-50/70 border-b border-slate-200 text-left text-slate-400 text-xs font-extrabold uppercase tracking-wider">
+                      <th class="py-3 px-6 text-center border-r border-slate-200 w-16">No.</th>
+                      <th class="py-3 px-6">Cuenta Mayor</th>
+                      <th class="py-3 px-6 text-right">Suma Debe</th>
+                      <th class="py-3 px-6 text-right font-medium">Suma Haber</th>
+                      <th class="py-3 px-6 text-right font-medium text-emerald-8000">Saldo Deudor</th>
+                      <th class="py-3 px-6 text-right">Saldo Acreedor</th>
+                    </tr>
+                  </thead>
+                  <tbody class="divide-y divide-slate-100">
+                    ${rowsHTML}
+                    <!-- Sumas Iguales -->
+                    <tr class="bg-slate-50/50 font-extrabold text-xs">
+                      <td class="py-3.5 px-6 border-r border-slate-200"></td>
+                      <td class="py-3.5 px-6 text-[#2C3E50] uppercase tracking-wider">SUMAS IGUALES</td>
+                      <td class="py-3.5 px-6 text-right font-mono text-sm text-[#2C3E50] border-t border-slate-200">${formatCurrency(globalSums.debeSum)}</td>
+                      <td class="py-3.5 px-6 text-right font-mono text-sm text-[#2C3E50] border-t border-slate-200">${formatCurrency(globalSums.haberSum)}</td>
+                      <td class="py-3.5 px-6 text-right font-mono text-sm text-emerald-700 border-t border-slate-200">${formatCurrency(globalSums.deudorSum)}</td>
+                      <td class="py-3.5 px-6 text-right font-mono text-sm text-[#34495E] border-t border-slate-200">${formatCurrency(globalSums.acreedorSum)}</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+
+              <!-- Balance status verification card -->
+              <div class="bg-slate-50 px-6 py-4 border-t border-slate-200 flex justify-between items-center">
+                <span class="text-xs text-slate-450 uppercase font-extrabold">Estado de Verificación</span>
+                <span class="inline-flex items-center gap-1.5 px-3 py-1 rounded-xl text-xs font-bold border ${
+                  isBalanced ? 'bg-emerald-50 text-emerald-800 border-emerald-200' : 'bg-[#E74C3C]/5 text-[#E74C3C] border-[#E74C3C]/25'
+                }">
+                  <span class="w-1.5 h-1.5 rounded-full ${isBalanced ? 'bg-emerald-500' : 'bg-[#E74C3C]'}"></span>
+                  ${isBalanced ? 'Cuentas Cuadradas Exitosamente' : 'Totales Desajustados'}
+                </span>
+              </div>
+            </div>
+          </div>
+        `;
+      }
+
+      // --- RENDER FORM LINES DYNAMIC SUBCOMPONENTS ---
+      function renderFullFormLines() {
+        const container = document.getElementById('form-lines-container');
+        if (!container) return; // Not on Libro Diario tab
+        
+        container.innerHTML = state.formLines.map((line, idx) => `
+          <div class="flex gap-2 items-center">
+            <input
+              type="text"
+              required
+              value="${line.cuenta}"
+              oninput="handleFormLineChange(${idx}, 'cuenta', this.value)"
+              placeholder="Nombre de cuenta"
+              class="flex-[2] min-w-0 px-3 py-2 bg-slate-50 border border-slate-250 rounded-lg text-xs focus:outline-none"
+              autocomplete="off"
+            />
+            <input
+              type="number"
+              step="0.01"
+              value="${line.debe}"
+              oninput="handleFormLineChange(${idx}, 'debe', this.value)"
+              placeholder="Debe"
+              class="flex-1 min-w-0 px-2.5 py-2 bg-slate-50 border border-slate-250 rounded-lg text-xs font-mono text-right focus:outline-none"
+            />
+            <input
+              type="number"
+              step="0.01"
+              value="${line.haber}"
+              oninput="handleFormLineChange(${idx}, 'haber', this.value)"
+              placeholder="Haber"
+              class="flex-1 min-w-0 px-2.5 py-2 bg-slate-50 border border-slate-250 rounded-lg text-xs font-mono text-right focus:outline-none"
+            />
+            <button
+              type="button"
+              onclick="handleRemoveFormLine(${idx})"
+              class="p-2 text-slate-400 hover:text-[#C0392B] rounded-lg transition-colors cursor-pointer"
+              title="Eliminar línea"
+            >
+              <i data-lucide="trash-2" class="w-3.5 h-3.5"></i>
+            </button>
+          </div>
+        `).join('');
+
+        updateFormTotals();
+        lucide.createIcons();
+      }
+
+      function updateFormTotals() {
+        const summaryElement = document.getElementById('form-totals-summary');
+        if (!summaryElement) return;
+
+        const { tDebe, tHaber } = calcActiveFormTotals();
+        const isFormBalanced = tDebe > 0 && Math.abs(tDebe - tHaber) < 0.01;
+
+        summaryElement.innerHTML = `
+          <div class="flex justify-between text-xs font-bold text-slate-500">
+            <span>Total Debe:</span>
+            <span class="font-mono text-slate-800">${formatCurrency(tDebe)}</span>
+          </div>
+          <div class="flex justify-between text-xs font-bold text-slate-500">
+            <span>Total Haber:</span>
+            <span class="font-mono text-slate-800">${formatCurrency(tHaber)}</span>
+          </div>
+          <div class="pt-2 border-t border-slate-200 flex justify-between items-center text-xs font-extrabold">
+            <span class="text-[#2C3E50] uppercase tracking-wide">Estado:</span>
+            <span class="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-lg font-bold ${
+              isFormBalanced ? 'bg-emerald-50 text-emerald-700' : 'bg-[#E74C3C]/5 text-[#E74C3C]'
+            }">
+              ${isFormBalanced ? 'Cuadrado' : 'No cuadrado'}
+            </span>
+          </div>
+        `;
+      }
+
+      // --- WIPE ALL DIALOG TRIGGERS ---
+      function openWipeConfirmation() {
+        const modal = document.getElementById('confirm-modal');
+        if (modal) modal.classList.remove('hidden');
+      }
+
+      function closeWipeConfirmation() {
+        const modal = document.getElementById('confirm-modal');
+        if (modal) modal.classList.add('hidden');
+      }
+
+      // --- TOAST CONTAINER RENDER HANDLER ---
+      function renderToast() {
+        let toastContainer = document.getElementById('toast-notification-container');
+        if (!toastContainer) {
+          toastContainer = document.createElement('div');
+          toastContainer.id = 'toast-notification-container';
+          toastContainer.className = 'fixed bottom-4 right-4 z-50 flex flex-col gap-2 pointer-events-none max-w-sm w-full px-4';
+          document.body.appendChild(toastContainer);
+        }
+
+        if (!state.toast) {
+          toastContainer.innerHTML = '';
+          return;
+        }
+
+        const t = state.toast;
+        let colorClass = 'bg-[#2C3E50] text-white';
+        let iconMarkup = '<i data-lucide="check-circle" class="w-4 h-4"></i>';
+
+        if (t.type === 'error') {
+          colorClass = 'bg-[#E74C3C] text-white';
+          iconMarkup = '<i data-lucide="alert-triangle" class="w-4 h-4"></i>';
+        } else if (t.type === 'info') {
+          colorClass = 'bg-[#34495E] text-white';
+          iconMarkup = '<i data-lucide="info" class="w-4 h-4"></i>';
+        }
+
+        toastContainer.innerHTML = `
+          <div class="${colorClass} p-4 rounded-xl shadow-lg border border-[#2C3E50]/10 flex items-center justify-between gap-3 pointer-events-auto fade-in">
+            <div class="flex items-center gap-2">
+              ${iconMarkup}
+              <span class="text-xs font-bold font-sans">${t.message}</span>
+            </div>
+            <div class="flex items-center gap-1.5">
+              ${t.action ? `
+                <button
+                  onclick="${t.action.onTrigger}"
+                  class="bg-white/10 hover:bg-white/20 text-white text-[10px] uppercase font-black px-2.5 py-1 rounded-lg cursor-pointer"
+                >
+                  ${t.action.label}
+                </button>
+              ` : ''}
+              <button
+                onclick="dismissToast()"
+                class="text-white/40 hover:text-white p-0.5 rounded-lg cursor-pointer"
+              >
+                <i data-lucide="x" class="w-3.5 h-3.5"></i>
+              </button>
+            </div>
+          </div>
+        `;
+        lucide.createIcons();
+      }
+
+      // INITIAL ASSEMBLY STARTUP
+      render();
+    </script>
   </body>
 </html>
-
